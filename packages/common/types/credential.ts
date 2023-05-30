@@ -6,7 +6,8 @@ export interface Grants {
 
 export interface Credential {
   id: string;
-  format: string;
+  type?: string[];
+  format?: string;
   credentialSubject?: CredentialSubject;
 }
 
@@ -16,7 +17,7 @@ export interface CredentialOffer {
   grants?: Grants;
 }
 
-export interface OpenIdConfiguration {
+export interface IssuerMetadata {
   authorization_endpoint: string;
   code_challenge_methods_supported: string[];
   credential_endpoint: string;
