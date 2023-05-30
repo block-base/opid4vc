@@ -6,20 +6,19 @@ import { useZxing } from "react-zxing";
 
 import { StoredCacheWithState } from "@/types/cache";
 
-import { Credential,OpenIdConfiguration } from "../../../common/types/credential";
+import { Credential, IssuerMetadata } from "../../../common/types/credential";
 
 export default function Home() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  // console.log(searchParams);
-
   const [dataInQRCode, setDataInQRCode] = useState("");
   const [mode, setMode] = useState<"Issue" | "Verify">();
-  const [dataFromOpenidCredentialIssuer, setDataFromOpenidCredentialIssuer] = useState<OpenIdConfiguration>();
+  const [dataFromOpenidCredentialIssuer, setDataFromOpenidCredentialIssuer] = useState<IssuerMetadata>();
   const [authorizationUrlWithQuery, setAuthorizationUrlWithQuery] = useState("");
   const [issuingCredential, setIssuingCredential] = useState<Credential>();
   const [code, setCode] = useState("");
   const [accessToken, setAccessToken] = useState("");
+  const [issuedCredential, setIssuedCredential] = useState<Credential>();
 
   const { ref } = useZxing({
     onResult(result) {
@@ -58,7 +57,6 @@ export default function Home() {
     const [grant_type] = dataFromOpenidCredentialIssuer.grant_types_supported;
     const [credential] = dataFromOpenidCredentialIssuer.credentials_supported;
     // Note: The current implementation is hardcoded for simplicity. However, future iterations should aim to calculate these values dynamically.
-
     // TODO: add pre auth flow by checking grant_type
 
     const state = "xqw2Lcafhx0NIoX0";
@@ -135,7 +133,7 @@ export default function Home() {
           body: JSON.stringify({ format, type, proof }),
         })
           .then((res) => res.json())
-          .then((data) => console.log(data));
+          .then((data) => setIssuedCredential(data.credential));
       });
   }, [searchParams]);
 
@@ -184,6 +182,12 @@ export default function Home() {
         <div>
           <h2>Access Token From Token Endpoint</h2>
           <p>{accessToken}</p>
+        </div>
+      )}
+      {issuedCredential && (
+        <div>
+          <h2>Issued Credential</h2>
+          <p>{JSON.stringify(issuedCredential)}</p>
         </div>
       )}
     </main>

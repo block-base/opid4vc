@@ -89,7 +89,7 @@ app.get("/qr", async (req, res) => {
 app.get("/.well-known/openid-credential-issuer", async (_, res) => {
   let data;
   if (credentialIssuerType === "mattr") {
-    data = await mattr.getOpenidCredentialIssuer();
+    data = await mattr.getIssuerMetadata();
   } else if (credentialIssuerType === "ms") {
     data = await ms.getCredentialSupported(credentialId);
   } else {
@@ -214,8 +214,7 @@ app.post("/credential", async (req, res) => {
   }
   const { protectedHeader } = await verifyJwsWithDid(proof.jwt);
   // TODO: map info from id token
-  const payload = mattr.formatCredential(credentialId, { id: protectedHeader.kid, name: "name" });
-  const { credential } = await mattr.signCredential(payload);
+  const { credential } = await mattr.createCredential(credentialId, { id: protectedHeader.kid });
   return res.json({ credential, format });
 });
 
