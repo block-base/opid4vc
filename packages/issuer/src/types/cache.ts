@@ -1,3 +1,3 @@
-export interface StoredCache {
+export interface StoredCacheWithState {
   redirect_uri: string;
 }

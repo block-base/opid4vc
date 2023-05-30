@@ -8,7 +8,7 @@ import qs from "querystring";
 
 import { verifyJwsWithDid } from "./lib/did";
 import { formatCredential, getOpenidCredentialIssuer, signCredential } from "./lib/mattr";
-import { StoredCache } from "./types/cache";
+import { StoredCacheWithState } from "./types/cache";
 
 const cacheStorage = new NodeCache({ stdTTL: 600 });
 dotenv.config();
@@ -19,6 +19,12 @@ app.use(express.json());
 
 const appUrl = process.env.APP_URL || "";
 const credentialId = process.env.CREDENTIAL_ID || "";
+const credentialIssuerType = process.env.CREDENTIAL_ISSUER_TYPE || "";
+
+const authUrl = process.env.AUTH_URL || "";
+const authClientId = process.env.AUTH_CLIENT_ID || "";
+
+const callbackUri = `${appUrl}/callback`;
 
 /**
  * health check
@@ -54,7 +60,7 @@ app.get("/.well-known/openid-credential-issuer", async (_, res) => {
     credential_issuer: appUrl,
     credential_endpoint: `${appUrl}/credential`,
   };
-  if (process.env.CREDENTIAL_ISSUER_TYPE === "mattr") {
+  if (credentialIssuerType === "mattr") {
     const data = await getOpenidCredentialIssuer();
     return res.json({
       ...data,
@@ -71,12 +77,13 @@ app.get("/authorize", (req, res) => {
     [string, string]
   ];
   const checkedQuery = Object.fromEntries(checkedQueryEntry);
-  cacheStorage.set<StoredCache>(checkedQuery.state, { redirect_uri: checkedQuery.redirect_uri });
-  checkedQuery.client_id = process.env.AUTH_CLIENT_ID || "";
+  cacheStorage.set<StoredCacheWithState>(checkedQuery.state, { redirect_uri: checkedQuery.redirect_uri });
+  checkedQuery.client_id = authClientId;
   checkedQuery.prompt = "login";
-  checkedQuery.redirect_uri = "http://localhost:8000/callback";
+  checkedQuery.redirect_uri = callbackUri;
+
   const queryString = qs.stringify(checkedQuery);
-  return res.redirect(`${process.env.AUTH_URL}?${queryString}`);
+  return res.redirect(`${authUrl}?${queryString}`);
 });
 
 app.get("/callback", (req, res) => {
@@ -85,7 +92,7 @@ app.get("/callback", (req, res) => {
     [string, string]
   ];
   const checkedQuery = Object.fromEntries(checkedQueryEntry);
-  const cache = cacheStorage.get<StoredCache>(checkedQuery.state);
+  const cache = cacheStorage.get<StoredCacheWithState>(checkedQuery.state);
   if (!cache) {
     throw new Error("cache is not defined");
   }
@@ -94,27 +101,28 @@ app.get("/callback", (req, res) => {
 });
 
 app.post("/token", async (req, res) => {
-  const { grant_type, client_id, code_verifier, code, redirect_uri } = req.body;
+  const { code } = req.body;
   const url = new URL(`https://dev-blockbase-mo.jp.auth0.com/oauth/token`);
-  const resp = await fetch(url.toString(), {
+  const grant_type = "authorization_code";
+  const redirect_uri = callbackUri;
+  const client_id = authClientId;
+  const data = await fetch(url.toString(), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      grant_type,
       client_id,
-      code_verifier,
       code,
+      grant_type,
       redirect_uri,
     }),
-  });
-
-  return res.json(await resp.json());
+  }).then(async (res) => await res.json());
+  return res.json(data);
 });
 
 const jwtCheck = auth({
-  audience: process.env.APP_URL || "aud",
+  audience: appUrl,
   issuerBaseURL: "https://dev-blockbase-mo.jp.auth0.com/",
   tokenSigningAlg: "RS256",
 });
@@ -127,7 +135,9 @@ interface ICredentialRequest {
   };
 }
 
-app.post("/credential", jwtCheck, async (req, res) => {
+// app.post("/credential", jwtCheck, async (req, res) => {
+app.post("/credential", async (req, res) => {
+  console.log("credential");
   const { format, proof } = req.body as ICredentialRequest;
   if (!format || !proof) {
     res.status(400).send("format or proof is missing");
