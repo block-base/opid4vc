@@ -76,21 +76,18 @@ export default function Home() {
     // Note: The current implementation is hardcoded for simplicity. However, future iterations should aim to calculate these values dynamically.
     // TODO: add pre auth flow by checking grant_type
 
-    const state = "xqw2Lcafhx0NIoX0";
-    const nonce = "kjfhuo34hPxksklj";
-
-    const cliendId = process.env.NEXT_PUBLIC_CLIENT_ID;
+    const state = "defaultState";
+    const nonce = "defaultNonce";
+    const cliend_id = process.env.NEXT_PUBLIC_CLIENT_ID;
     const redirect_uri = "http://localhost:3000";
-    const audience = issuer;
 
     const queryString = qs.stringify({
       scope,
       response_type,
       state,
       nonce,
-      cliendId,
+      cliend_id,
       redirect_uri,
-      audience,
     });
     const cache = {
       token_endpoint,
