@@ -1,4 +1,12 @@
+import { Credential, CredentialSubject } from "../../../common/types/credential";
 import { MattrOAuthTokenResponse, MattrSignResponse } from "../types/mattr";
+
+export const getOpenidCredentialIssuer = async () => {
+  const data = await fetch(
+    `https://${process.env.MATTR_TENANT}.vii.mattr.global/.well-known/openid-credential-issuer`
+  ).then(async (res) => await res.json());
+  return data;
+};
 
 export const getOAuthToken = async (): Promise<MattrOAuthTokenResponse> => {
   const client_id = process.env.MATTR_CLIENT_ID;
@@ -18,16 +26,30 @@ export const getOAuthToken = async (): Promise<MattrOAuthTokenResponse> => {
   return data;
 };
 
-export const signCredential = async (payload: any): Promise<MattrSignResponse> => {
+export const formatCredential = async (credentialSubject: CredentialSubject) => {
+  const { credentials_supported } = await getOpenidCredentialIssuer();
+  const credential = credentials_supported.find(
+    (credential: Credential) => credential.id === process.env.CREDENTIAL_ID
+  );
+  // Note: The current implementation leverages the supported credential as a template for simplicity.
+  // However, future enhancements should include modifications to certain fields in order to align more closely with the actual Mattr credential structure.
+  credential.credentialSubject = {
+    ...credential.credentialSubject,
+    ...credentialSubject,
+  };
+  return credential;
+};
+
+export const signCredential = async (credentialSubject: any): Promise<MattrSignResponse> => {
   const { access_token, token_type } = await getOAuthToken();
-  const data = await fetch(`${process.env.MATTR_TENANT_URL}/v2/credentials/web-semantic/sign`, {
+  const data = await fetch(`https://${process.env.MATTR_TENANT}.vii.mattr.global/v2/credentials/web-semantic/sign`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `${token_type} ${access_token}`,
     },
     body: JSON.stringify({
-      payload,
+      payload: credentialSubject,
     }),
   }).then(async (res) => await res.json());
   return data;

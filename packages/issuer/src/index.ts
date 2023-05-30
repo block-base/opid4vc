@@ -1,53 +1,70 @@
+import cors from "cors";
 import dotenv from "dotenv";
 import express from "express";
 import { auth } from "express-oauth2-jwt-bearer";
 import QRCode from "qrcode";
 
-import sample from "./config/well-known-openid-credential-issuer.json";
-import { formatCredential } from "./lib/credential";
-import { verifyToken } from "./lib/did";
-import { signCredential } from "./lib/mattr";
+import { verifyJwsWithDid } from "./lib/did";
+import { formatCredential,getOpenidCredentialIssuer, signCredential } from "./lib/mattr";
 
 dotenv.config();
 
 const app = express();
+app.use(cors());
 app.use(express.json());
 
-app.get("/", (_, res) => {
-  res.send("OPID4VCI Wrapper Demo");
-});
+const issuer = process.env.ISSUER_ENDPOINT || "";
+const credentialId = process.env.CREDENTIAL_ID || "";
 
 /**
- * This endpoint is used by the wallet to get the configuration of the issuer.
+ * health check
  */
-app.get("/.well-known/openid-credential-issuer", (_, res) => {
-  // TODO: get it from config value
-  return res.json(sample);
+app.get("/", (_, res) => {
+  res.send("OPID4VCI Wrapper Demo");
 });
 
 /**
  * This endpoint shows QR code
  */
 app.get("/qr", async (_, res) => {
-  try {
-    const url = "openid-credential-offer://?credential_offer=";
-    const params = {
-      credential_issuer: process.env.ISSUER_ENDPOINT,
-      credentials: ["aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"],
-    };
-    const qrCodeImage = await QRCode.toDataURL(url + encodeURI(JSON.stringify(params)));
-    res.setHeader("Content-Type", "image/png");
-    res.send(Buffer.from(qrCodeImage.split(",")[1], "base64"));
-  } catch (err) {
-    console.error(err);
-    res.status(500).send("Error generating QR Code");
+  const url = "openid-credential-offer://?credential_offer=";
+  const params = {
+    credential_issuer: issuer,
+    credentials: [credentialId],
+  };
+  const qrCodeImage = await QRCode.toDataURL(`${url}${encodeURI(JSON.stringify(params))}`);
+  const qrCodeDataBase64 = qrCodeImage.split(",")[1];
+  const qrCodeDataBuffer = Buffer.from(qrCodeDataBase64, "base64");
+  res.setHeader("Content-Type", "image/png");
+  return res.send(qrCodeDataBuffer);
+});
+
+/**
+ * used by the wallet to get the configuration of the issuer.
+ */
+app.get("/.well-known/openid-credential-issuer", async (_, res) => {
+  const override = {
+    issuer,
+    authorization_endpoint: `${issuer}/authorize`,
+    token_endpoint: `${issuer}/token`,
+    credential_issuer: issuer,
+    credential_endpoint: `${issuer}/credential`,
+  };
+  if (process.env.ISSUER_TYPE === "mattr") {
+    const data = await getOpenidCredentialIssuer();
+    return res.json({
+      ...data,
+      ...override,
+    });
+  } else {
+    throw new Error("not implemented");
   }
-  return undefined;
 });
 
 app.get("/authorize", (req, res) => {
   const { scope, response_type, state, nonce, redirect_uri, code_challenge_method, code_challenge } = req.query;
-  const url = new URL(`https://dev-blockbase-mo.jp.auth0.com/authorize`);
+  const url = new URL(process.env.AUTH_URL || "");
+
   if (typeof scope === "string") url.searchParams.append("scope", scope);
   if (typeof response_type === "string") url.searchParams.append("response_type", response_type);
   if (typeof state === "string") url.searchParams.append("state", state);
@@ -57,15 +74,14 @@ app.get("/authorize", (req, res) => {
     url.searchParams.append("code_challenge_method", code_challenge_method);
   if (typeof code_challenge === "string") url.searchParams.append("code_challenge", code_challenge);
 
-  // /.well-known/openid-credential-issuer から取れないデータはここで追加する
-  const client_id = process.env.AUTH0_CLIENT_ID as string;
+  const client_id = process.env.AUTH_CLIENT_ID || "";
   url.searchParams.append("client_id", client_id);
   const prompt = "login";
   url.searchParams.append("prompt", prompt);
 
-  const audience = process.env.ISSUER_ENDPOINT as string;
+  const audience = process.env.ISSUER_ENDPOINT || "";
   url.searchParams.append("audience", audience);
-  res.redirect(url.toString());
+  return res.redirect(url.toString());
 });
 
 app.post("/token", async (req, res) => {
@@ -86,7 +102,7 @@ app.post("/token", async (req, res) => {
     }),
   });
 
-  res.json(await resp.json());
+  return res.json(await resp.json());
 });
 
 const jwtCheck = auth({
@@ -108,10 +124,11 @@ app.post("/credential", jwtCheck, async (req, res) => {
   if (!format || !proof) {
     res.status(400).send("format or proof is missing");
   }
-  const { protectedHeader } = await verifyToken(proof.jwt);
-  const payload = formatCredential({ id: protectedHeader.kid, name: "test" });
+  const { protectedHeader } = await verifyJwsWithDid(proof.jwt);
+  // TODO: map info from id token
+  const payload = formatCredential({ id: protectedHeader.kid, name: "name" });
   const { credential } = await signCredential(payload);
-  res.json({ credential, format });
+  return res.json({ credential, format });
 });
 
 const port = process.env.PORT || 8000;
