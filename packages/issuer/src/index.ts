@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 import dotenv from "dotenv";
 import express from "express";
 import { auth } from "express-oauth2-jwt-bearer";
+import { decode } from "jsonwebtoken";
 import NodeCache from "node-cache";
 import QRCode from "qrcode";
 import qs from "querystring";
@@ -13,6 +14,7 @@ import { verifyJwsWithDid } from "./lib/did";
 import * as mattr from "./lib/mattr";
 import * as ms from "./lib/ms";
 import { StoredCacheWithState } from "./types/cache";
+import { MSCredentialRequest } from "./types/ms";
 
 const cacheStorage = new NodeCache({ stdTTL: 600 });
 dotenv.config();
@@ -141,7 +143,29 @@ app.get("/callback", (req, res) => {
 app.post("/token", async (req, res) => {
   const { code } = req.body;
 
-  // TODO: add pre auth flow
+  const format = getCredentialFormat(credentialIssuerType);
+
+  if (credentialIssuanceFlow === "urn:ietf:params:oauth:grant-type:pre-authorized_code") {
+    const pre_authorized_code = req.body["pre-authorized_code"];
+    if (pre_authorized_code) {
+      const requestUri = cacheStorage.get<string>(pre_authorized_code);
+      if (!requestUri) {
+        throw new Error("request uri is not defined");
+      }
+      const resp = await fetch(requestUri, {
+        method: "GET",
+      }).then((result) => result.text());
+      const issueRequest = decode(resp) as MSCredentialRequest;
+      const data = {
+        access_token: issueRequest.id_token_hint,
+        token_type: "Bearer",
+        scope: `${format}:${credentialType}`,
+      };
+      return res.json(data);
+    } else {
+      throw new Error("not implemented");
+    }
+  }
 
   // TODO: change this by env
   const url = new URL(`https://dev-blockbase-mo.jp.auth0.com/oauth/token`);
