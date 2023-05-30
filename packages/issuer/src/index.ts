@@ -34,7 +34,7 @@ const authUrl = process.env.AUTH_URL || "";
 const authClientId = process.env.AUTH_CLIENT_ID || "";
 
 const callbackUri = `${appUrl}/callback`;
-const credentialOfferBaseUrl = "openid-credential-offer://?credential_offer=";
+const credentialOfferBaseUrl = "openid4vci://?credential_offer=";
 
 /**
  * health check
@@ -183,7 +183,7 @@ app.post("/token", async (req, res) => {
       grant_type,
       redirect_uri,
     }),
-  }).then(async (res) => await res.json());
+  }).then((res) => res.json());
   return res.json(data);
 });
 
@@ -205,8 +205,6 @@ interface ICredentialRequest {
 
 // app.post("/credential", jwtCheck, async (req, res) => {
 app.post("/credential", async (req, res) => {
-  console.log("credential");
-
   // TODO: implement ms flow
   const { format, proof } = req.body as ICredentialRequest;
   if (!format || !proof) {

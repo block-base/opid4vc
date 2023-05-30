@@ -36,7 +36,7 @@ app.get("/qr", async (req, res) => {
 app.get("/presentationRequest", async (req, res) => {
   // TODO: state & nonce
 
-  const redirect_uri = `${appUrl}/post`;
+  const redirect_uri = `${appUrl}/present`;
   const presentationRequest = {
     response_types: "vp_token",
     response_mode: "direct_post",
@@ -47,7 +47,7 @@ app.get("/presentationRequest", async (req, res) => {
   return res.json(presentationRequest);
 });
 
-app.post("/post", async (req, res) => {
+app.post("/present", async (req, res) => {
   const { presentation_submission, vp_token } = req.body;
   // TODO: state & nonce
 

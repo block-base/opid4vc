@@ -3,6 +3,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import qs from "querystring";
 import { useEffect, useState } from "react";
 import { useZxing } from "react-zxing";
+import { v4 as uuidv4 } from "uuid";
 
 import { StoredCacheWithState } from "@/types/cache";
 
@@ -20,10 +21,12 @@ export default function Home() {
   const [accessToken, setAccessToken] = useState("");
   const [issuedCredential, setIssuedCredential] = useState<Credential>();
 
+  const [dataFromPresentaionRequest, setDataFromPresentaionRequest] = useState<any>();
+  const [availableCredential, setAvailableCredential] = useState();
+
   const { ref } = useZxing({
     onResult(result) {
       const text = result.getText();
-      console.log("qrcode", text);
       setDataInQRCode(text);
     },
   });
@@ -32,18 +35,32 @@ export default function Home() {
     if (!dataInQRCode) {
       return;
     }
-    const issueKey = "openid-credential-offer://?credential_offer";
+    const [scheme] = dataInQRCode.split("://");
     const parsedQuery = qs.parse(dataInQRCode);
-    if (typeof parsedQuery[issueKey] === "string") {
+    if (scheme === "openid4vci") {
+      const key = "openid4vci://?credential_offer";
+      if (typeof parsedQuery[key] !== "string") {
+        return;
+      }
       setMode("Issue");
-      const credentialOffer = JSON.parse(parsedQuery[issueKey]);
+      const credentialOffer = JSON.parse(parsedQuery[key]);
       fetch(`${credentialOffer.credential_issuer}/.well-known/openid-credential-issuer`)
-        .then(async (res) => await res.json())
+        .then((res) => res.json())
         .then((data) => {
           setDataFromOpenidCredentialIssuer(data);
         });
-    } else {
-      console.log("TODO: verify");
+    } else if (scheme === "openid4vp") {
+      const key = "openid4vp://?request_uri";
+      if (typeof parsedQuery[key] !== "string") {
+        return;
+      }
+      setMode("Verify");
+      const requestUri = parsedQuery[key];
+      fetch(requestUri)
+        .then((res) => res.json())
+        .then((data) => {
+          setDataFromPresentaionRequest(data);
+        });
     }
   }, [dataInQRCode]);
 
@@ -85,6 +102,21 @@ export default function Home() {
   }, [dataFromOpenidCredentialIssuer]);
 
   useEffect(() => {
+    if (!dataFromPresentaionRequest) {
+      return;
+    }
+    const existingCredentialsString = localStorage.getItem("credentials");
+    if (!existingCredentialsString) {
+      return;
+    }
+    const existingCredentials = JSON.parse(existingCredentialsString) as any[];
+    const availableCredential = existingCredentials.find(({ vc: { type } }) =>
+      type?.includes(dataFromPresentaionRequest.presentation_definition.input_descriptors[0].id)
+    );
+    setAvailableCredential(availableCredential);
+  }, [dataFromPresentaionRequest]);
+
+  useEffect(() => {
     // TODO: add pre auth flow
     const code = searchParams.get("code");
     const state = searchParams.get("state");
@@ -110,6 +142,7 @@ export default function Home() {
       .then(({ access_token }) => {
         if (!access_token) {
           setAccessToken("fetch access token failed");
+          return;
         } else {
           setAccessToken(access_token);
         }
@@ -133,63 +166,132 @@ export default function Home() {
           body: JSON.stringify({ format, type, proof }),
         })
           .then((res) => res.json())
-          .then((data) => setIssuedCredential(data.credential));
+          .then((data) => {
+            const id = uuidv4();
+            const vc = data.credential;
+            const existingCredentialsString = localStorage.getItem("credentials");
+            let existingCredential;
+            if (existingCredentialsString) {
+              existingCredential = JSON.parse(existingCredentialsString);
+            } else {
+              existingCredential = [];
+            }
+            existingCredential.push({ id, vc });
+            localStorage.setItem("credentials", JSON.stringify(existingCredential));
+            setIssuedCredential(vc);
+          });
       });
   }, [searchParams]);
 
   return (
     <main>
-      <video ref={ref} />
-      {mode && (
-        <div>
-          <h2>Mode:</h2>
-          <p>{mode}</p>
-        </div>
-      )}
-      {dataInQRCode && (
-        <div>
-          <h2>Data QR Code:</h2>
-          <p>{dataInQRCode}</p>
-        </div>
-      )}
-      {dataFromOpenidCredentialIssuer && (
-        <div>
-          <h2>Data from Openid Credential Issuer</h2>
-          <p>{JSON.stringify(dataFromOpenidCredentialIssuer)}</p>
-          <button
-            disabled={!authorizationUrlWithQuery}
-            onClick={() => {
-              router.push(authorizationUrlWithQuery);
-            }}
-          >
-            Authorization
-          </button>
-        </div>
-      )}
-      {issuingCredential && (
-        <div>
-          <h2>Issuing Credential</h2>
-          <p>{JSON.stringify(issuingCredential)}</p>
-        </div>
-      )}
-      {code && (
-        <div>
-          <h2>Code from Authorization Endpoint</h2>
-          <p>{code}</p>
-        </div>
-      )}
-      {accessToken && (
-        <div>
-          <h2>Access Token From Token Endpoint</h2>
-          <p>{accessToken}</p>
-        </div>
-      )}
-      {issuedCredential && (
-        <div>
-          <h2>Issued Credential</h2>
-          <p>{JSON.stringify(issuedCredential)}</p>
-        </div>
-      )}
+      <div>
+        <h2>QRCode Reader</h2>
+        <video ref={ref} />
+      </div>
+      <div>
+        <h2>Process Logger</h2>
+        {mode && (
+          <div>
+            <h3>Mode:</h3>
+            <p>{mode}</p>
+          </div>
+        )}
+        {dataInQRCode && (
+          <div>
+            <h3>Data QR Code:</h3>
+            <p>{dataInQRCode}</p>
+          </div>
+        )}
+        {dataFromOpenidCredentialIssuer && (
+          <div>
+            <h3>Data from Openid Credential Issuer</h3>
+            <p>{JSON.stringify(dataFromOpenidCredentialIssuer)}</p>
+            <button
+              disabled={!authorizationUrlWithQuery}
+              onClick={() => {
+                router.push(authorizationUrlWithQuery);
+              }}
+            >
+              Authorization
+            </button>
+          </div>
+        )}
+        {issuingCredential && (
+          <div>
+            <h3>Issuing Credential</h3>
+            <p>{JSON.stringify(issuingCredential)}</p>
+          </div>
+        )}
+        {code && (
+          <div>
+            <h3>Code from Authorization Endpoint</h3>
+            <p>{code}</p>
+          </div>
+        )}
+        {accessToken && (
+          <div>
+            <h3>Access Token From Token Endpoint</h3>
+            <p>{accessToken}</p>
+          </div>
+        )}
+        {issuedCredential && (
+          <div>
+            <h3>Issued Credential</h3>
+            <p>{JSON.stringify(issuedCredential)}</p>
+          </div>
+        )}
+        {dataFromPresentaionRequest && (
+          <div>
+            <h3>Data from Openid Credential Issuer</h3>
+            <p>{JSON.stringify(dataFromPresentaionRequest)}</p>
+          </div>
+        )}
+        {availableCredential && (
+          <div>
+            <h3>Available Credential</h3>
+            <p>{JSON.stringify(availableCredential)}</p>
+            <button
+              onClick={() => {
+                // TODO: SIOPv2
+                const vp_token = availableCredential;
+                // TODO: presentaion submission
+                const presentation_submission = {};
+                fetch(dataFromPresentaionRequest.redirect_uri, {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({ vp_token, presentation_submission }),
+                });
+              }}
+            >
+              Present
+            </button>
+          </div>
+        )}
+      </div>
+      <div>
+        <h2>Credential Repository Logger</h2>
+        <button
+          onClick={() => {
+            const existingCredentialsString = localStorage.getItem("credentials");
+            if (!existingCredentialsString) {
+              return;
+            }
+            console.log("existingCredentialsString", JSON.parse(existingCredentialsString));
+          }}
+        >
+          Console
+        </button>
+        <button
+          onClick={() => {
+            localStorage.clear();
+          }}
+        >
+          Clear
+        </button>
+      </div>
     </main>
   );
 }
