@@ -10,7 +10,8 @@ import qs from "querystring";
 import { CredentialOffer } from "../../common/types/credential";
 import { getCredentialFormat } from "./lib/credential";
 import { verifyJwsWithDid } from "./lib/did";
-import { formatCredential, getOpenidCredentialIssuer, signCredential } from "./lib/mattr";
+import * as mattr from "./lib/mattr";
+import * as ms from "./lib/ms";
 import { StoredCacheWithState } from "./types/cache";
 
 const cacheStorage = new NodeCache({ stdTTL: 600 });
@@ -21,9 +22,10 @@ app.use(cors());
 app.use(express.json());
 
 // TODO: env validation
-const appUrl = process.env.APP_URL || "";
+const appUrl = process.env.APP_URI || "";
 const credentialIssuanceFlow = process.env.CREDENTIAL_ISSUEANCE_FLOW || "";
 const credentialIssuerType = process.env.CREDENTIAL_ISSUER_TYPE || "";
+const credentialType = process.env.CREDENTIAL_TYPE || "";
 const credentialId = process.env.CREDENTIAL_ID || "";
 
 const authUrl = process.env.AUTH_URL || "";
@@ -48,7 +50,7 @@ app.get("/qr", async (req, res) => {
     credential_issuer: appUrl,
     credentials: [{ id: credentialId, format }],
   };
-  if (credentialIssuanceFlow === "pre_authorized_code") {
+  if (credentialIssuanceFlow === "urn:ietf:params:oauth:grant-type:pre-authorized_code") {
     // TODO: replace for ms integration
     // 1. access token validation
     // 2. create request url (use query for now)
@@ -57,14 +59,20 @@ app.get("/qr", async (req, res) => {
     if (!request_uri) {
       throw new Error("access token invalid");
     }
-
     const preAuthorizedCode = randomUUID();
     credentialOffer.grants = {
       "urn:ietf:params:oauth:grant-type:pre-authorized_code": {
         "pre-authorized_code": preAuthorizedCode,
       },
     };
-    cacheStorage.set(preAuthorizedCode, request_uri);
+    if (credentialIssuerType === "ms") {
+      cacheStorage.set(preAuthorizedCode, request_uri);
+    } else if (credentialIssuerType === "mattr") {
+      throw new Error("not implemented");
+    } else {
+      // TODO: move validation in common logic
+      throw new Error("credential issuer type is invalid");
+    }
   }
   const qrCodeImage = await QRCode.toDataURL(`${credentialOfferBaseUrl}${encodeURI(JSON.stringify(credentialOffer))}`);
   const qrCodeDataBase64 = qrCodeImage.split(",")[1];
@@ -77,22 +85,29 @@ app.get("/qr", async (req, res) => {
  * used by the wallet to get the configuration of the issuer.
  */
 app.get("/.well-known/openid-credential-issuer", async (_, res) => {
-  const override = {
+  let data;
+  if (credentialIssuerType === "mattr") {
+    data = await mattr.getOpenidCredentialIssuer();
+  } else if (credentialIssuerType === "ms") {
+    data = await ms.getCredentialSupported(credentialId);
+  } else {
+    throw new Error("not implemented");
+  }
+  const format = getCredentialFormat(credentialIssuerType);
+  const scopes_supported = [`${format}:${credentialType}`];
+  const response_types_supported = ["code"];
+  const grant_types_supported = [credentialIssuanceFlow];
+  return res.json({
+    ...data,
     issuer: appUrl,
     authorization_endpoint: `${appUrl}/authorize`,
     token_endpoint: `${appUrl}/token`,
     credential_issuer: appUrl,
     credential_endpoint: `${appUrl}/credential`,
-  };
-  if (credentialIssuerType === "mattr") {
-    const data = await getOpenidCredentialIssuer();
-    return res.json({
-      ...data,
-      ...override,
-    });
-  } else {
-    throw new Error("not implemented");
-  }
+    scopes_supported,
+    response_types_supported,
+    grant_types_supported,
+  });
 });
 
 app.get("/authorize", (req, res) => {
@@ -105,7 +120,6 @@ app.get("/authorize", (req, res) => {
   checkedQuery.client_id = authClientId;
   checkedQuery.prompt = "login";
   checkedQuery.redirect_uri = callbackUri;
-
   const queryString = qs.stringify(checkedQuery);
   return res.redirect(`${authUrl}?${queryString}`);
 });
@@ -126,6 +140,10 @@ app.get("/callback", (req, res) => {
 
 app.post("/token", async (req, res) => {
   const { code } = req.body;
+
+  // TODO: add pre auth flow
+
+  // TODO: change this by env
   const url = new URL(`https://dev-blockbase-mo.jp.auth0.com/oauth/token`);
   const grant_type = "authorization_code";
   const redirect_uri = callbackUri;
@@ -145,12 +163,14 @@ app.post("/token", async (req, res) => {
   return res.json(data);
 });
 
+// TODO: make it common
 const jwtCheck = auth({
   audience: appUrl,
   issuerBaseURL: "https://dev-blockbase-mo.jp.auth0.com/",
   tokenSigningAlg: "RS256",
 });
 
+// TODO: make it common
 interface ICredentialRequest {
   format: string;
   proof: {
@@ -162,14 +182,16 @@ interface ICredentialRequest {
 // app.post("/credential", jwtCheck, async (req, res) => {
 app.post("/credential", async (req, res) => {
   console.log("credential");
+
+  // TODO: implement ms flow
   const { format, proof } = req.body as ICredentialRequest;
   if (!format || !proof) {
     res.status(400).send("format or proof is missing");
   }
   const { protectedHeader } = await verifyJwsWithDid(proof.jwt);
   // TODO: map info from id token
-  const payload = formatCredential({ id: protectedHeader.kid, name: "name" });
-  const { credential } = await signCredential(payload);
+  const payload = mattr.formatCredential(credentialId, { id: protectedHeader.kid, name: "name" });
+  const { credential } = await mattr.signCredential(payload);
   return res.json({ credential, format });
 });
 

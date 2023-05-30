@@ -3,7 +3,7 @@ import { MattrOAuthTokenResponse, MattrSignResponse } from "../types/mattr";
 
 export const getOpenidCredentialIssuer = async () => {
   const data = await fetch(
-    `https://${process.env.MATTR_TENANT}.vii.mattr.global/.well-known/openid-credential-issuer`
+    `https://${process.env.MATTR_TENANT_ID}.vii.mattr.global/.well-known/openid-credential-issuer`
   ).then(async (res) => await res.json());
   return data;
 };
@@ -26,11 +26,9 @@ export const getOAuthToken = async (): Promise<MattrOAuthTokenResponse> => {
   return data;
 };
 
-export const formatCredential = async (credentialSubject: CredentialSubject) => {
+export const formatCredential = async (credentialId: string, credentialSubject: CredentialSubject) => {
   const { credentials_supported } = await getOpenidCredentialIssuer();
-  const credential = credentials_supported.find(
-    (credential: Credential) => credential.id === process.env.CREDENTIAL_ID
-  );
+  const credential = credentials_supported.find((credential: Credential) => credential.id === credentialId);
   // Note: The current implementation leverages the supported credential as a template for simplicity.
   // However, future enhancements should include modifications to certain fields in order to align more closely with the actual Mattr credential structure.
   credential.credentialSubject = {
@@ -42,7 +40,7 @@ export const formatCredential = async (credentialSubject: CredentialSubject) => 
 
 export const signCredential = async (credentialSubject: any): Promise<MattrSignResponse> => {
   const { access_token, token_type } = await getOAuthToken();
-  const data = await fetch(`https://${process.env.MATTR_TENANT}.vii.mattr.global/v2/credentials/web-semantic/sign`, {
+  const data = await fetch(`https://${process.env.MATTR_TENANT_ID}.vii.mattr.global/v2/credentials/web-semantic/sign`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

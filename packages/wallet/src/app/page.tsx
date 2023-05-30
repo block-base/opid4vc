@@ -6,7 +6,7 @@ import { useZxing } from "react-zxing";
 
 import { StoredCacheWithState } from "@/types/cache";
 
-import { OpenIdConfiguration } from "../../../common/types/credential";
+import { Credential,OpenIdConfiguration } from "../../../common/types/credential";
 
 export default function Home() {
   const router = useRouter();
@@ -23,7 +23,9 @@ export default function Home() {
 
   const { ref } = useZxing({
     onResult(result) {
-      setDataInQRCode(result.getText());
+      const text = result.getText();
+      console.log("qrcode", text);
+      setDataInQRCode(text);
     },
   });
 
@@ -51,13 +53,14 @@ export default function Home() {
       return;
     }
     const { issuer, authorization_endpoint, token_endpoint, credential_endpoint } = dataFromOpenidCredentialIssuer;
-
-    // Note: The current implementation only considers the first value in the array for processing.
-    // However, future development should consider handling multiple values, to accommodate potential changes or added complexity in data.
     const [scope] = dataFromOpenidCredentialIssuer.scopes_supported;
     const [response_type] = dataFromOpenidCredentialIssuer.response_types_supported;
+    const [grant_type] = dataFromOpenidCredentialIssuer.grant_types_supported;
     const [credential] = dataFromOpenidCredentialIssuer.credentials_supported;
     // Note: The current implementation is hardcoded for simplicity. However, future iterations should aim to calculate these values dynamically.
+
+    // TODO: add pre auth flow by checking grant_type
+
     const state = "xqw2Lcafhx0NIoX0";
     const nonce = "kjfhuo34hPxksklj";
 
@@ -84,6 +87,7 @@ export default function Home() {
   }, [dataFromOpenidCredentialIssuer]);
 
   useEffect(() => {
+    // TODO: add pre auth flow
     const code = searchParams.get("code");
     const state = searchParams.get("state");
     if (!code || !state) {
@@ -112,9 +116,11 @@ export default function Home() {
           setAccessToken(access_token);
         }
 
-        // Note: hardcode for now
+        // TODO: hardcode for now
         const format = "ldp_vc";
         const type = "CourseCredential";
+
+        // TODO: siop for ms
         const proof = {
           proof_type: "jwt",
           jwt: "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa3RjNU5QR3R2Mm9qUFpWOFlYUFA2NFAxVGpMTThBQjU5QnVoYkdqcDJCU2p0I3o2TWt0YzVOUEd0djJvalBaVjhZWFBQNjRQMVRqTE04QUI1OUJ1aGJHanAyQlNqdCJ9.eyJpc3MiOiJtb2JpbGV3YWxsZXQiLCJhdWQiOiJodHRwczovL2Jsb2NrYmFzZS1ncXR3bWYudmlpLm1hdHRyLmdsb2JhbCIsImlhdCI6MTY4MTk3MjMzMywianRpIjoiZTI5ZWFlODQtNjgxMS00YzgyLTg0NmItM2QyNjE4YWJhYTk2In0._pSg2-NE-nH47s6MOYpWHQA6AHpOczylfwq8Wui66w63nu3mmfs4P4ypSqgNnw9XpdLJWicuqWz3Pheds8KWCw",
