@@ -4,7 +4,7 @@ import { MattrOAuthTokenResponse, MattrSignResponse } from "../types/mattr";
 export const getIssuerMetadata = async (): Promise<IssuerMetadata> => {
   const data = await fetch(
     `https://${process.env.MATTR_TENANT_ID}.vii.mattr.global/.well-known/openid-credential-issuer`
-  ).then(async (res) => await res.json());
+  ).then((res) => res.json());
   return data;
 };
 
@@ -22,7 +22,7 @@ export const getOAuthToken = async (): Promise<MattrOAuthTokenResponse> => {
       audience: "https://vii.mattr.global",
       grant_type: "client_credentials",
     }),
-  }).then(async (res) => await res.json());
+  }).then((res) => res.json());
   return data;
 };
 
@@ -31,15 +31,15 @@ export const createCredential = async (
   credentialSubject: CredentialSubject
 ): Promise<MattrSignResponse> => {
   const { credentials_supported } = await getIssuerMetadata();
+  const credentialType = process.env.CREDENTIAL_TYPE || "";
   const foundCredentialSupported = credentials_supported.find(
-    (credential: Credential) => credential.id === credentialId
+    (credential: Credential) => credential.id === credentialId && credential.type?.includes(credentialType)
   );
   if (!foundCredentialSupported) {
     throw new Error("credential supported not found");
   }
-  const { type } = foundCredentialSupported;
   const payload = {
-    type,
+    type: [credentialType],
     issuer: {
       id: process.env.CREDENTIAL_ISSUER_DID,
       name: process.env.CREDENTIAL_ISSUER_NAME,
@@ -56,7 +56,7 @@ export const createCredential = async (
     body: JSON.stringify({
       payload,
     }),
-  }).then(async (res) => await res.json());
+  }).then((res) => res.json());
   if (!data.credential) {
     throw new Error("create credential failed");
   }

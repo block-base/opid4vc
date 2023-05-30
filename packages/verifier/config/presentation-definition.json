@@ -1,20 +1,8 @@
 {
-  "id": "aaa",
+  "id": "uuid",
   "input_descriptors": [
     {
-      "id": "BlockBaseVC",
-      "format": {
-        "ldp_vc": {
-          "proof_type": ["Ed25519Signature2018"]
-        }
-      },
-      "constraints": {
-        "fields": [
-          {
-            "path": ["$.credentialSubject.given_name"]
-          }
-        ]
-      }
+      "id": "CourseCredential"
     }
   ]
 }
