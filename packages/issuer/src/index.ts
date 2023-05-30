@@ -2,18 +2,22 @@ import cors from "cors";
 import dotenv from "dotenv";
 import express from "express";
 import { auth } from "express-oauth2-jwt-bearer";
+import NodeCache from "node-cache";
 import QRCode from "qrcode";
+import qs from "querystring";
 
 import { verifyJwsWithDid } from "./lib/did";
-import { formatCredential,getOpenidCredentialIssuer, signCredential } from "./lib/mattr";
+import { formatCredential, getOpenidCredentialIssuer, signCredential } from "./lib/mattr";
+import { StoredCache } from "./types/cache";
 
+const cacheStorage = new NodeCache({ stdTTL: 600 });
 dotenv.config();
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-const issuer = process.env.ISSUER_ENDPOINT || "";
+const appUrl = process.env.APP_URL || "";
 const credentialId = process.env.CREDENTIAL_ID || "";
 
 /**
@@ -29,7 +33,7 @@ app.get("/", (_, res) => {
 app.get("/qr", async (_, res) => {
   const url = "openid-credential-offer://?credential_offer=";
   const params = {
-    credential_issuer: issuer,
+    credential_issuer: appUrl,
     credentials: [credentialId],
   };
   const qrCodeImage = await QRCode.toDataURL(`${url}${encodeURI(JSON.stringify(params))}`);
@@ -44,13 +48,13 @@ app.get("/qr", async (_, res) => {
  */
 app.get("/.well-known/openid-credential-issuer", async (_, res) => {
   const override = {
-    issuer,
-    authorization_endpoint: `${issuer}/authorize`,
-    token_endpoint: `${issuer}/token`,
-    credential_issuer: issuer,
-    credential_endpoint: `${issuer}/credential`,
+    issuer: appUrl,
+    authorization_endpoint: `${appUrl}/authorize`,
+    token_endpoint: `${appUrl}/token`,
+    credential_issuer: appUrl,
+    credential_endpoint: `${appUrl}/credential`,
   };
-  if (process.env.ISSUER_TYPE === "mattr") {
+  if (process.env.CREDENTIAL_ISSUER_TYPE === "mattr") {
     const data = await getOpenidCredentialIssuer();
     return res.json({
       ...data,
@@ -62,32 +66,36 @@ app.get("/.well-known/openid-credential-issuer", async (_, res) => {
 });
 
 app.get("/authorize", (req, res) => {
-  const { scope, response_type, state, nonce, redirect_uri, code_challenge_method, code_challenge } = req.query;
-  const url = new URL(process.env.AUTH_URL || "");
+  const { query } = req;
+  const checkedQueryEntry = Object.entries(query).filter(([, value]) => typeof value === "string") as [
+    [string, string]
+  ];
+  const checkedQuery = Object.fromEntries(checkedQueryEntry);
+  cacheStorage.set<StoredCache>(checkedQuery.state, { redirect_uri: checkedQuery.redirect_uri });
+  checkedQuery.client_id = process.env.AUTH_CLIENT_ID || "";
+  checkedQuery.prompt = "login";
+  checkedQuery.redirect_uri = "http://localhost:8000/callback";
+  const queryString = qs.stringify(checkedQuery);
+  return res.redirect(`${process.env.AUTH_URL}?${queryString}`);
+});
 
-  if (typeof scope === "string") url.searchParams.append("scope", scope);
-  if (typeof response_type === "string") url.searchParams.append("response_type", response_type);
-  if (typeof state === "string") url.searchParams.append("state", state);
-  if (typeof nonce === "string") url.searchParams.append("nonce", nonce);
-  if (typeof redirect_uri === "string") url.searchParams.append("redirect_uri", redirect_uri);
-  if (typeof code_challenge_method === "string")
-    url.searchParams.append("code_challenge_method", code_challenge_method);
-  if (typeof code_challenge === "string") url.searchParams.append("code_challenge", code_challenge);
-
-  const client_id = process.env.AUTH_CLIENT_ID || "";
-  url.searchParams.append("client_id", client_id);
-  const prompt = "login";
-  url.searchParams.append("prompt", prompt);
-
-  const audience = process.env.ISSUER_ENDPOINT || "";
-  url.searchParams.append("audience", audience);
-  return res.redirect(url.toString());
+app.get("/callback", (req, res) => {
+  const { query } = req;
+  const checkedQueryEntry = Object.entries(query).filter(([, value]) => typeof value === "string") as [
+    [string, string]
+  ];
+  const checkedQuery = Object.fromEntries(checkedQueryEntry);
+  const cache = cacheStorage.get<StoredCache>(checkedQuery.state);
+  if (!cache) {
+    throw new Error("cache is not defined");
+  }
+  const queryString = qs.stringify(checkedQuery);
+  return res.redirect(`${cache.redirect_uri}?${queryString}`);
 });
 
 app.post("/token", async (req, res) => {
   const { grant_type, client_id, code_verifier, code, redirect_uri } = req.body;
   const url = new URL(`https://dev-blockbase-mo.jp.auth0.com/oauth/token`);
-
   const resp = await fetch(url.toString(), {
     method: "POST",
     headers: {
@@ -106,7 +114,7 @@ app.post("/token", async (req, res) => {
 });
 
 const jwtCheck = auth({
-  audience: process.env.ISSUER_ENDPOINT || "aud",
+  audience: process.env.APP_URL || "aud",
   issuerBaseURL: "https://dev-blockbase-mo.jp.auth0.com/",
   tokenSigningAlg: "RS256",
 });
