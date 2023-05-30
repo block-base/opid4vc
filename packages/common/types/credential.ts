@@ -13,7 +13,7 @@ export interface Credential {
 
 export interface CredentialOffer {
   credential_issuer: string;
-  credentials: Credential[];
+  credentials: string[];
   grants?: Grants;
 }
 

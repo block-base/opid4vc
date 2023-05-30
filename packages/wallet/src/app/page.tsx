@@ -37,8 +37,8 @@ export default function Home() {
     }
     const [scheme] = dataInQRCode.split("://");
     const parsedQuery = qs.parse(dataInQRCode);
-    if (scheme === "openid4vci") {
-      const key = "openid4vci://?credential_offer";
+    if (scheme === "openid-credential-offer") {
+      const key = "openid-credential-offer://?credential_offer";
       if (typeof parsedQuery[key] !== "string") {
         return;
       }
@@ -77,7 +77,7 @@ export default function Home() {
     // TODO: add pre auth flow by checking grant_type
 
     const state = "defaultState";
-    const nonce = "defaultNonce";
+    // const nonce = "defaultNonce";
     const cliend_id = process.env.NEXT_PUBLIC_CLIENT_ID;
     const redirect_uri = "http://localhost:3000";
 
@@ -85,7 +85,6 @@ export default function Home() {
       scope,
       response_type,
       state,
-      nonce,
       cliend_id,
       redirect_uri,
     });

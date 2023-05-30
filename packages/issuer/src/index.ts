@@ -23,6 +23,7 @@ dotenv.config();
 const app = express();
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use(morgan("dev"));
 
 // TODO: env validation
@@ -37,7 +38,7 @@ const authClientId = process.env.AUTH_CLIENT_ID || "";
 const authClientSecret = process.env.AUTH_CLIENT_SECRET || "";
 
 const callbackUri = `${appUrl}/callback`;
-const credentialOfferBaseUrl = "openid4vci://?credential_offer=";
+const credentialOfferBaseUrl = "openid-credential-offer://?credential_offer=";
 
 /**
  * health check
@@ -50,10 +51,9 @@ app.get("/", (_, res) => {
  * This endpoint shows QR code
  */
 app.get("/qr", async (req, res) => {
-  const format = getCredentialFormat(credentialIssuerType);
   const credentialOffer: CredentialOffer = {
     credential_issuer: appUrl,
-    credentials: [{ id: credentialId, format }],
+    credentials: [credentialId],
   };
   if (credentialIssuanceFlow === "urn:ietf:params:oauth:grant-type:pre-authorized_code") {
     // TODO: replace for ms integration
@@ -123,12 +123,18 @@ app.get("/authorize", (req, res) => {
     [string, string]
   ];
   const checkedQuery = Object.fromEntries(checkedQueryEntry);
+  console.log(checkedQuery);
   cacheStorage.set<StoredCacheWithState>(checkedQuery.state, { redirect_uri: checkedQuery.redirect_uri });
   checkedQuery.client_id = authClientId;
   checkedQuery.scope = `openid offline_access ${authClientId}`;
   checkedQuery.response_type = "code";
   checkedQuery.prompt = "login";
   checkedQuery.redirect_uri = callbackUri;
+
+  // NOTE: temp delete for mattr wallet
+  delete checkedQuery.code_challenge;
+  delete checkedQuery.code_challenge_method;
+
   const queryString = qs.stringify(checkedQuery);
   return res.redirect(`${authUrl}/authorize?${queryString}`);
 });
@@ -149,7 +155,6 @@ app.get("/callback", (req, res) => {
 
 app.post("/token", async (req, res) => {
   const { code } = req.body;
-
   const format = getCredentialFormat(credentialIssuerType);
 
   if (credentialIssuanceFlow === "urn:ietf:params:oauth:grant-type:pre-authorized_code") {
@@ -193,6 +198,7 @@ app.post("/token", async (req, res) => {
       request_uri,
     }),
   }).then((res) => res.json());
+  console.log("data", data);
   return res.json(data);
 });
 
