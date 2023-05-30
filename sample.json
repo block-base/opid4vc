@@ -1,0 +1,37 @@
+{
+    "issuer": "https://blockbase-gqtwmf.vii.mattr.global",
+    "authorization_endpoint": "https://blockbase-gqtwmf.vii.mattr.global/core/v1/oauth/authorize",
+    "token_endpoint": "https://blockbase-gqtwmf.vii.mattr.global/core/v1/oauth/token",
+    "scopes_supported": ["ldp_vc:CourseCredential"],
+    "response_types_supported": ["code"],
+    "response_modes_supported": ["fragment", "query"],
+    "grant_types_supported": ["authorization_code"],
+    "token_endpoint_auth_methods_supported": ["none"],
+    "code_challenge_methods_supported": ["S256"],
+    "credential_issuer": "https://blockbase-gqtwmf.vii.mattr.global",
+    "credential_endpoint": "https://blockbase-gqtwmf.vii.mattr.global/core/v1/openid/credential",
+    "credentials_supported": [
+        {
+            "format": "ldp_vc",
+            "id": "89c3dda0-767c-48cf-879c-06e1623ede2d",
+            "scope": "ldp_vc:CourseCredential",
+            "@context": ["https://www.w3.org/2018/credentials/v1"],
+            "type": [
+                "VerifiableCredential",
+                "CourseCredential",
+                "AlumniCredential",
+                "EducationCredential"
+            ],
+            "credentialSubject": { "picture": {}, "firstName": {} },
+            "cryptographic_binding_methods_supported": ["did"],
+            "cryptographic_suites_supported": ["Ed25519Signature2018"],
+            "display": [
+                {
+                    "name": "Course credential",
+                    "background_color": "#B00AA0",
+                    "logo": { "url": "https://example.edu/img/watermark.png" }
+                }
+            ]
+        }
+    ]
+}

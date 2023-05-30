@@ -1,4 +1,5 @@
 import cors from "cors";
+import { randomUUID } from "crypto";
 import dotenv from "dotenv";
 import express from "express";
 import { auth } from "express-oauth2-jwt-bearer";
@@ -6,6 +7,8 @@ import NodeCache from "node-cache";
 import QRCode from "qrcode";
 import qs from "querystring";
 
+import { CredentialOffer } from "../../common/types/credential";
+import { getCredentialFormat } from "./lib/credential";
 import { verifyJwsWithDid } from "./lib/did";
 import { formatCredential, getOpenidCredentialIssuer, signCredential } from "./lib/mattr";
 import { StoredCacheWithState } from "./types/cache";
@@ -17,14 +20,17 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// TODO: env validation
 const appUrl = process.env.APP_URL || "";
-const credentialId = process.env.CREDENTIAL_ID || "";
+const credentialIssuanceFlow = process.env.CREDENTIAL_ISSUEANCE_FLOW || "";
 const credentialIssuerType = process.env.CREDENTIAL_ISSUER_TYPE || "";
+const credentialId = process.env.CREDENTIAL_ID || "";
 
 const authUrl = process.env.AUTH_URL || "";
 const authClientId = process.env.AUTH_CLIENT_ID || "";
 
 const callbackUri = `${appUrl}/callback`;
+const credentialOfferBaseUrl = "openid-credential-offer://?credential_offer=";
 
 /**
  * health check
@@ -36,13 +42,31 @@ app.get("/", (_, res) => {
 /**
  * This endpoint shows QR code
  */
-app.get("/qr", async (_, res) => {
-  const url = "openid-credential-offer://?credential_offer=";
-  const params = {
+app.get("/qr", async (req, res) => {
+  const format = getCredentialFormat(credentialIssuerType);
+  const credentialOffer: CredentialOffer = {
     credential_issuer: appUrl,
-    credentials: [credentialId],
+    credentials: [{ id: credentialId, format }],
   };
-  const qrCodeImage = await QRCode.toDataURL(`${url}${encodeURI(JSON.stringify(params))}`);
+  if (credentialIssuanceFlow === "pre_authorized_code") {
+    // TODO: replace for ms integration
+    // 1. access token validation
+    // 2. create request url (use query for now)
+    const { request_uri } = req.query as any;
+    // this should be removed
+    if (!request_uri) {
+      throw new Error("access token invalid");
+    }
+
+    const preAuthorizedCode = randomUUID();
+    credentialOffer.grants = {
+      "urn:ietf:params:oauth:grant-type:pre-authorized_code": {
+        "pre-authorized_code": preAuthorizedCode,
+      },
+    };
+    cacheStorage.set(preAuthorizedCode, request_uri);
+  }
+  const qrCodeImage = await QRCode.toDataURL(`${credentialOfferBaseUrl}${encodeURI(JSON.stringify(credentialOffer))}`);
   const qrCodeDataBase64 = qrCodeImage.split(",")[1];
   const qrCodeDataBuffer = Buffer.from(qrCodeDataBase64, "base64");
   res.setHeader("Content-Type", "image/png");

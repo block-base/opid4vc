@@ -1,8 +1,19 @@
 export type CredentialSubject = any;
 
+export interface Grants {
+  "urn:ietf:params:oauth:grant-type:pre-authorized_code": { "pre-authorized_code": string };
+}
+
 export interface Credential {
   id: string;
-  credentialSubject: CredentialSubject;
+  format: string;
+  credentialSubject?: CredentialSubject;
+}
+
+export interface CredentialOffer {
+  credential_issuer: string;
+  credentials: Credential[];
+  grants?: Grants;
 }
 
 export interface OpenIdConfiguration {
