@@ -38,7 +38,7 @@ const authClientId = process.env.AUTH_CLIENT_ID || "";
 const authClientSecret = process.env.AUTH_CLIENT_SECRET || "";
 
 const callbackUri = `${appUrl}/callback`;
-const credentialOfferBaseUrl = "openid-credential-offer://?credential_offer=";
+const credentialOfferBaseUrl = "opid4vci://?credential_offer=";
 
 /**
  * health check

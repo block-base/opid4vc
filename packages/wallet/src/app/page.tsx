@@ -2,6 +2,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import qs from "querystring";
 import { useEffect, useState } from "react";
+import QRCode from "react-qr-code";
 import { useZxing } from "react-zxing";
 import { v4 as uuidv4 } from "uuid";
 
@@ -14,6 +15,7 @@ export default function Home() {
   const searchParams = useSearchParams();
   const [dataInQRCode, setDataInQRCode] = useState("");
   const [mode, setMode] = useState<"Issue" | "Verify">();
+  const [wallet, setWallet] = useState<"local" | "others">();
   const [dataFromOpenidCredentialIssuer, setDataFromOpenidCredentialIssuer] = useState<IssuerMetadata>();
   const [authorizationUrlWithQuery, setAuthorizationUrlWithQuery] = useState("");
   const [issuingCredential, setIssuingCredential] = useState<Credential>();
@@ -24,6 +26,8 @@ export default function Home() {
   const [dataFromPresentaionRequest, setDataFromPresentaionRequest] = useState<any>();
   const [availableCredential, setAvailableCredential] = useState();
 
+  const [relayQRCodeValue, setRelayQRCodeValue] = useState("");
+
   const { ref } = useZxing({
     onResult(result) {
       const text = result.getText();
@@ -32,13 +36,13 @@ export default function Home() {
   });
 
   useEffect(() => {
-    if (!dataInQRCode) {
+    if (!dataInQRCode || wallet !== "local") {
       return;
     }
     const [scheme] = dataInQRCode.split("://");
     const parsedQuery = qs.parse(dataInQRCode);
-    if (scheme === "openid-credential-offer") {
-      const key = "openid-credential-offer://?credential_offer";
+    if (scheme === "opid4vci") {
+      const key = "opid4vci://?credential_offer";
       if (typeof parsedQuery[key] !== "string") {
         return;
       }
@@ -62,25 +66,19 @@ export default function Home() {
           setDataFromPresentaionRequest(data);
         });
     }
-  }, [dataInQRCode]);
+  }, [dataInQRCode, wallet]);
 
   useEffect(() => {
     if (!dataFromOpenidCredentialIssuer) {
       return;
     }
-    const { issuer, authorization_endpoint, token_endpoint, credential_endpoint } = dataFromOpenidCredentialIssuer;
+    const { authorization_endpoint, token_endpoint, credential_endpoint } = dataFromOpenidCredentialIssuer;
     const [scope] = dataFromOpenidCredentialIssuer.scopes_supported;
     const [response_type] = dataFromOpenidCredentialIssuer.response_types_supported;
-    const [grant_type] = dataFromOpenidCredentialIssuer.grant_types_supported;
     const [credential] = dataFromOpenidCredentialIssuer.credentials_supported;
-    // Note: The current implementation is hardcoded for simplicity. However, future iterations should aim to calculate these values dynamically.
-    // TODO: add pre auth flow by checking grant_type
-
     const state = "defaultState";
-    // const nonce = "defaultNonce";
     const cliend_id = process.env.NEXT_PUBLIC_CLIENT_ID;
     const redirect_uri = "http://localhost:3000";
-
     const queryString = qs.stringify({
       scope,
       response_type,
@@ -125,6 +123,7 @@ export default function Home() {
     }
     const cache = JSON.parse(item) as StoredCacheWithState;
     setMode("Issue");
+    setWallet("local");
     setIssuingCredential(cache.credential);
     setCode(code);
     fetch(`${cache.token_endpoint}`, {
@@ -187,16 +186,39 @@ export default function Home() {
       </div>
       <div>
         <h2>Process Logger</h2>
+        {dataInQRCode && (
+          <div>
+            <h3>Data QR Code:</h3>
+            <p>{dataInQRCode}</p>
+            <h3>Process by:</h3>
+            <button
+              onClick={() => {
+                setWallet("local");
+              }}
+            >
+              Local
+            </button>
+            <button>MS</button>
+            <button
+              onClick={() => {
+                const value = dataInQRCode.replace("opid4vci", "openid-credential-offer");
+                setRelayQRCodeValue(value);
+              }}
+            >
+              Mattr
+            </button>
+          </div>
+        )}
         {mode && (
           <div>
             <h3>Mode:</h3>
             <p>{mode}</p>
           </div>
         )}
-        {dataInQRCode && (
+        {relayQRCodeValue && (
           <div>
-            <h3>Data QR Code:</h3>
-            <p>{dataInQRCode}</p>
+            <h3>Relay QRCode</h3>
+            <QRCode size={256} value={relayQRCodeValue} />
           </div>
         )}
         {dataFromOpenidCredentialIssuer && (
