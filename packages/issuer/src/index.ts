@@ -30,8 +30,8 @@ const credentialIssuerType = process.env.CREDENTIAL_ISSUER_TYPE || "";
 const credentialType = process.env.CREDENTIAL_TYPE || "";
 const credentialId = process.env.CREDENTIAL_ID || "";
 
-const authUrl = process.env.AUTH_AUTHORIZE_URL || "";
-const tokenUrl = process.env.AUTH_TOKEN_URL || "";
+const authUrl = process.env.AUTH_URL || "";
+const tokenUrl = process.env.TOKEN_URL || "";
 const authClientId = process.env.AUTH_CLIENT_ID || "";
 
 const callbackUri = `${appUrl}/callback`;
