@@ -2,8 +2,9 @@ import cors from "cors";
 import { randomUUID } from "crypto";
 import dotenv from "dotenv";
 import express from "express";
-import { auth } from "express-oauth2-jwt-bearer";
+// import { auth } from "express-oauth2-jwt-bearer";
 import { decode } from "jsonwebtoken";
+import morgan from "morgan";
 import NodeCache from "node-cache";
 import QRCode from "qrcode";
 import qs from "querystring";
@@ -22,6 +23,8 @@ dotenv.config();
 const app = express();
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(morgan("dev"));
 
 // TODO: env validation
 const appUrl = process.env.APP_URI || "";
@@ -33,25 +36,25 @@ const credentialId = process.env.CREDENTIAL_ID || "";
 const authUrl = process.env.AUTH_URL || "";
 const tokenUrl = process.env.TOKEN_URL || "";
 const authClientId = process.env.AUTH_CLIENT_ID || "";
+const authClientSecret = process.env.AUTH_CLIENT_SECRET || "";
 
 const callbackUri = `${appUrl}/callback`;
-const credentialOfferBaseUrl = "openid-credential-offer://?credential_offer=";
+const credentialOfferBaseUrl = "opid4vci://?credential_offer=";
 
 /**
  * health check
  */
 app.get("/", (_, res) => {
-  res.send("OPID4VCI Wrapper Demo");
+  res.send("Issuer");
 });
 
 /**
  * This endpoint shows QR code
  */
 app.get("/qr", async (req, res) => {
-  const format = getCredentialFormat(credentialIssuerType);
   const credentialOffer: CredentialOffer = {
     credential_issuer: appUrl,
-    credentials: [{ id: credentialId, format }],
+    credentials: [credentialId],
   };
   if (credentialIssuanceFlow === "urn:ietf:params:oauth:grant-type:pre-authorized_code") {
     // TODO: replace for ms integration
@@ -77,7 +80,9 @@ app.get("/qr", async (req, res) => {
       throw new Error("credential issuer type is invalid");
     }
   }
-  const qrCodeImage = await QRCode.toDataURL(`${credentialOfferBaseUrl}${encodeURI(JSON.stringify(credentialOffer))}`);
+  const qrCodeImage = await QRCode.toDataURL(
+    `${credentialOfferBaseUrl}${encodeURIComponent(JSON.stringify(credentialOffer))}`
+  );
   const qrCodeDataBase64 = qrCodeImage.split(",")[1];
   const qrCodeDataBuffer = Buffer.from(qrCodeDataBase64, "base64");
   res.setHeader("Content-Type", "image/png");
@@ -90,7 +95,7 @@ app.get("/qr", async (req, res) => {
 app.get("/.well-known/openid-credential-issuer", async (_, res) => {
   let data;
   if (credentialIssuerType === "mattr") {
-    data = await mattr.getOpenidCredentialIssuer();
+    data = await mattr.getIssuerMetadata();
   } else if (credentialIssuerType === "ms") {
     data = await ms.getCredentialSupported(credentialId);
   } else {
@@ -119,12 +124,20 @@ app.get("/authorize", (req, res) => {
     [string, string]
   ];
   const checkedQuery = Object.fromEntries(checkedQueryEntry);
+  console.log(checkedQuery);
   cacheStorage.set<StoredCacheWithState>(checkedQuery.state, { redirect_uri: checkedQuery.redirect_uri });
   checkedQuery.client_id = authClientId;
+  checkedQuery.scope = `openid offline_access ${authClientId}`;
+  checkedQuery.response_type = "code";
   checkedQuery.prompt = "login";
   checkedQuery.redirect_uri = callbackUri;
+
+  // NOTE: temp delete for mattr wallet
+  delete checkedQuery.code_challenge;
+  delete checkedQuery.code_challenge_method;
+
   const queryString = qs.stringify(checkedQuery);
-  return res.redirect(`${authUrl}?${queryString}`);
+  return res.redirect(`${authUrl}/authorize?${queryString}`);
 });
 
 app.get("/callback", (req, res) => {
@@ -143,7 +156,6 @@ app.get("/callback", (req, res) => {
 
 app.post("/token", async (req, res) => {
   const { code } = req.body;
-
   const format = getCredentialFormat(credentialIssuerType);
 
   if (credentialIssuanceFlow === "urn:ietf:params:oauth:grant-type:pre-authorized_code") {
@@ -169,30 +181,27 @@ app.post("/token", async (req, res) => {
     }
   }
 
-  const url = new URL(tokenUrl);
+  const url = new URL(`${authUrl}/token`);
+  
   const grant_type = "authorization_code";
-  const redirect_uri = callbackUri;
   const client_id = authClientId;
+  const client_secret = authClientSecret;
+  const request_uri = callbackUri;
   const data = await fetch(url.toString(), {
     method: "POST",
     headers: {
-      "Content-Type": "application/json",
+      "Content-Type": "application/x-www-form-urlencoded",
     },
-    body: JSON.stringify({
+    body: new URLSearchParams({
       client_id,
+      client_secret,
       code,
       grant_type,
-      redirect_uri,
+      request_uri,
     }),
-  }).then(async (res) => await res.json());
+  }).then((res) => res.json());
+  console.log("data", data);
   return res.json(data);
-});
-
-// TODO: make it common
-const jwtCheck = auth({
-  audience: appUrl,
-  issuerBaseURL: "https://dev-blockbase-mo.jp.auth0.com/",
-  tokenSigningAlg: "RS256",
 });
 
 // TODO: make it common
@@ -204,10 +213,9 @@ interface ICredentialRequest {
   };
 }
 
+// TODO: validate access token
 // app.post("/credential", jwtCheck, async (req, res) => {
 app.post("/credential", async (req, res) => {
-  console.log("credential");
-
   // TODO: implement ms flow
   const { format, proof } = req.body as ICredentialRequest;
   if (!format || !proof) {
@@ -231,8 +239,7 @@ app.post("/credential", async (req, res) => {
 
   const { protectedHeader } = await verifyJwsWithDid(proof.jwt);
   // TODO: map info from id token
-  const payload = mattr.formatCredential(credentialId, { id: protectedHeader.kid, name: "name" });
-  const { credential } = await mattr.signCredential(payload);
+  const { credential } = await mattr.createCredential(credentialId, { id: protectedHeader.kid });
   return res.json({ credential, format });
 });
 

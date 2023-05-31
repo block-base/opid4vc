@@ -1,10 +1,10 @@
-import { Credential, CredentialSubject } from "../../../common/types/credential";
+import { Credential, CredentialSubject, IssuerMetadata } from "../../../common/types/credential";
 import { MattrOAuthTokenResponse, MattrSignResponse } from "../types/mattr";
 
-export const getOpenidCredentialIssuer = async () => {
+export const getIssuerMetadata = async (): Promise<IssuerMetadata> => {
   const data = await fetch(
     `https://${process.env.MATTR_TENANT_ID}.vii.mattr.global/.well-known/openid-credential-issuer`
-  ).then(async (res) => await res.json());
+  ).then((res) => res.json());
   return data;
 };
 
@@ -22,23 +22,30 @@ export const getOAuthToken = async (): Promise<MattrOAuthTokenResponse> => {
       audience: "https://vii.mattr.global",
       grant_type: "client_credentials",
     }),
-  }).then(async (res) => await res.json());
+  }).then((res) => res.json());
   return data;
 };
 
-export const formatCredential = async (credentialId: string, credentialSubject: CredentialSubject) => {
-  const { credentials_supported } = await getOpenidCredentialIssuer();
-  const credential = credentials_supported.find((credential: Credential) => credential.id === credentialId);
-  // Note: The current implementation leverages the supported credential as a template for simplicity.
-  // However, future enhancements should include modifications to certain fields in order to align more closely with the actual Mattr credential structure.
-  credential.credentialSubject = {
-    ...credential.credentialSubject,
-    ...credentialSubject,
+export const createCredential = async (
+  credentialId: string,
+  credentialSubject: CredentialSubject
+): Promise<MattrSignResponse> => {
+  const { credentials_supported } = await getIssuerMetadata();
+  const credentialType = process.env.CREDENTIAL_TYPE || "";
+  const foundCredentialSupported = credentials_supported.find(
+    (credential: Credential) => credential.id === credentialId && credential.type?.includes(credentialType)
+  );
+  if (!foundCredentialSupported) {
+    throw new Error("credential supported not found");
+  }
+  const payload = {
+    type: [credentialType],
+    issuer: {
+      id: process.env.CREDENTIAL_ISSUER_DID,
+      name: process.env.CREDENTIAL_ISSUER_NAME,
+    },
+    credentialSubject,
   };
-  return credential;
-};
-
-export const signCredential = async (credentialSubject: any): Promise<MattrSignResponse> => {
   const { access_token, token_type } = await getOAuthToken();
   const data = await fetch(`https://${process.env.MATTR_TENANT_ID}.vii.mattr.global/v2/credentials/web-semantic/sign`, {
     method: "POST",
@@ -47,8 +54,11 @@ export const signCredential = async (credentialSubject: any): Promise<MattrSignR
       Authorization: `${token_type} ${access_token}`,
     },
     body: JSON.stringify({
-      payload: credentialSubject,
+      payload,
     }),
-  }).then(async (res) => await res.json());
+  }).then((res) => res.json());
+  if (!data.credential) {
+    throw new Error("create credential failed");
+  }
   return data;
 };

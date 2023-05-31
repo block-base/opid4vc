@@ -16,7 +16,7 @@ export const verifyJwsWithDid = async (token: string) => {
   // Note: The following code block is currently commented out due to the unavailability of the Universal Resolver during development.
   // const data = await fetch(`https://dev.uniresolver.io/1.0/identifiers/${header.kid}`, {
   //   method: "GET",
-  // }).then(async (res) => await res.json());
+  // }).then((res) => res.json());
   // const jwk = await importJWK(data.didDocument.verificationMethod[0].publicKeyJwk);
   // const { protectedHeader } = await jwtVerify(token, jwk);
   // return { protectedHeader };

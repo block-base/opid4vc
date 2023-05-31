@@ -1,0 +1,8 @@
+{
+  "id": "uuid",
+  "input_descriptors": [
+    {
+      "id": "CourseCredential"
+    }
+  ]
+}
