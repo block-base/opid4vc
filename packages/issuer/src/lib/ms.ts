@@ -34,3 +34,7 @@ export const getCredentialSupported = async (credentialId: string) => {
   const credentials_supported = [credential];
   return { credentials_supported };
 };
+
+export const getCredentialEndpoint = () => {
+  return `https://beta.did.msidentity.com/v1.0/tenants/${process.env.MS_TENANT_ID}/verifiableCredentials/issue`;
+};

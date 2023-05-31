@@ -30,7 +30,8 @@ const credentialIssuerType = process.env.CREDENTIAL_ISSUER_TYPE || "";
 const credentialType = process.env.CREDENTIAL_TYPE || "";
 const credentialId = process.env.CREDENTIAL_ID || "";
 
-const authUrl = process.env.AUTH_URL || "";
+const authUrl = process.env.AUTH_AUTHORIZE_URL || "";
+const tokenUrl = process.env.AUTH_TOKEN_URL || "";
 const authClientId = process.env.AUTH_CLIENT_ID || "";
 
 const callbackUri = `${appUrl}/callback`;
@@ -156,6 +157,7 @@ app.post("/token", async (req, res) => {
         method: "GET",
       }).then((result) => result.text());
       const issueRequest = decode(resp) as MSCredentialRequest;
+      cacheStorage.set(issueRequest.id_token_hint, issueRequest);
       const data = {
         access_token: issueRequest.id_token_hint,
         token_type: "Bearer",
@@ -167,8 +169,7 @@ app.post("/token", async (req, res) => {
     }
   }
 
-  // TODO: change this by env
-  const url = new URL(`https://dev-blockbase-mo.jp.auth0.com/oauth/token`);
+  const url = new URL(tokenUrl);
   const grant_type = "authorization_code";
   const redirect_uri = callbackUri;
   const client_id = authClientId;
@@ -212,6 +213,22 @@ app.post("/credential", async (req, res) => {
   if (!format || !proof) {
     res.status(400).send("format or proof is missing");
   }
+  if (credentialIssuerType === "ms") {
+    // 1. get authorize token
+    const id_token = req.body["pre-authorized_code"];
+    // 2. verify token check
+    // 3. get request uri
+    const issueEndpoint = ms.getCredentialEndpoint();
+    const { vc } = await fetch(issueEndpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(proof.jwt),
+    }).then(async (res) => await res.json());
+    return res.json({ credential: vc, format });
+  }
+
   const { protectedHeader } = await verifyJwsWithDid(proof.jwt);
   // TODO: map info from id token
   const payload = mattr.formatCredential(credentialId, { id: protectedHeader.kid, name: "name" });
