@@ -182,7 +182,7 @@ app.post("/token", async (req, res) => {
   }
 
   const url = new URL(`${authUrl}/token`);
-  
+
   const grant_type = "authorization_code";
   const client_id = authClientId;
   const client_secret = authClientSecret;
@@ -217,23 +217,27 @@ interface ICredentialRequest {
 // app.post("/credential", jwtCheck, async (req, res) => {
 app.post("/credential", async (req, res) => {
   // TODO: implement ms flow
+  const bearerToken = req.headers.authorization;
   const { format, proof } = req.body as ICredentialRequest;
   if (!format || !proof) {
     res.status(400).send("format or proof is missing");
   }
   if (credentialIssuerType === "ms") {
     // 1. get authorize token
-    const id_token = req.body["pre-authorized_code"];
+    const id_token = bearerToken;
     // 2. verify token check
     // 3. get request uri
     const issueEndpoint = ms.getCredentialEndpoint();
     const { vc } = await fetch(issueEndpoint, {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
+        "Content-Type": "text/plain",
       },
-      body: JSON.stringify(proof.jwt),
-    }).then(async (res) => await res.json());
+      body: proof.jwt,
+    }).then(async (res) => {
+      const json = await res.json();
+      return json;
+    });
     return res.json({ credential: vc, format });
   }
 

@@ -1,4 +1,6 @@
 "use client";
+import * as ionjs from "@decentralized-identity/ion-sdk/dist/lib/index";
+import jsonwebtoken from "jsonwebtoken";
 import { useRouter, useSearchParams } from "next/navigation";
 import qs from "querystring";
 import { useEffect, useState } from "react";
@@ -7,8 +9,10 @@ import { useZxing } from "react-zxing";
 import { v4 as uuidv4 } from "uuid";
 
 import { StoredCacheWithState } from "@/types/cache";
+import { AccessToken } from "@/types/token";
 
 import { Credential, IssuerMetadata } from "../../../common/types/credential";
+import { Signer } from "../../lib/signer";
 
 export default function Home() {
   const router = useRouter();
@@ -20,13 +24,18 @@ export default function Home() {
   const [authorizationUrlWithQuery, setAuthorizationUrlWithQuery] = useState("");
   const [issuingCredential, setIssuingCredential] = useState<Credential>();
   const [code, setCode] = useState("");
+  const [preCode, setPreCode] = useState("");
   const [accessToken, setAccessToken] = useState("");
   const [issuedCredential, setIssuedCredential] = useState<Credential>();
+  const [did, setDid] = useState("");
 
   const [dataFromPresentaionRequest, setDataFromPresentaionRequest] = useState<any>();
   const [availableCredential, setAvailableCredential] = useState();
 
   const [relayQRCodeValue, setRelayQRCodeValue] = useState("");
+
+  const [publicKey, setPublicKey] = useState<ionjs.JwkEs256k>();
+  const [privateKey, setPrivateKey] = useState<ionjs.JwkEs256k>();
 
   const { ref } = useZxing({
     onResult(result) {
@@ -34,6 +43,20 @@ export default function Home() {
       setDataInQRCode(text);
     },
   });
+
+  useEffect(() => {
+    (async () => {
+      const signer = new Signer();
+      const [publicKey, privateKey] = await ionjs.IonKey.generateEs256kOperationKeyPair();
+      await signer.init(publicKey, privateKey);
+      setPublicKey(publicKey);
+      setPrivateKey(privateKey);
+      if (!signer.did) {
+        throw new Error("did is not found");
+      }
+      setDid(signer.did);
+    })();
+  }, []);
 
   useEffect(() => {
     if (!dataInQRCode || wallet !== "local") {
@@ -48,6 +71,14 @@ export default function Home() {
       }
       setMode("Issue");
       const credentialOffer = JSON.parse(parsedQuery[key]);
+
+      const preAuthorizationCode =
+        credentialOffer.grants["urn:ietf:params:oauth:grant-type:pre-authorized_code"]["pre-authorized_code"];
+      if (preAuthorizationCode) {
+        setPreCode(preAuthorizationCode);
+      }
+
+      localStorage.setItem("credentialOffer", JSON.stringify(credentialOffer));
       fetch(`${credentialOffer.credential_issuer}/.well-known/openid-credential-issuer`)
         .then((res) => res.json())
         .then((data) => {
@@ -110,6 +141,96 @@ export default function Home() {
     setAvailableCredential(availableCredential);
   }, [dataFromPresentaionRequest]);
 
+  const preAuthIssue = async () => {
+    // setMode("Issue");
+    // setWallet("local");
+
+    const existingCredentialOfferString = localStorage.getItem("credentialOffer");
+    if (!existingCredentialOfferString) {
+      throw new Error("existingCredentialOfferString is not found");
+    }
+
+    const credentialOffer = JSON.parse(existingCredentialOfferString);
+    const preAuthorizationCode = preCode;
+    if (!preAuthorizationCode) {
+      throw new Error("preAuthorizationCode is not found");
+    }
+    console.log("credentialOffer", credentialOffer);
+    if (!dataFromOpenidCredentialIssuer) {
+      throw new Error("dataFromOpenidCredentialIssuer is not found");
+    }
+    const res = await fetch(`${dataFromOpenidCredentialIssuer?.token_endpoint}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        grant_type: "urn:ietf:params:oauth:grant-type:pre-authorized_code",
+        "pre-authorized_code": preCode,
+      }),
+    });
+    const { access_token } = await res.json();
+    if (!access_token) {
+      setAccessToken("fetch access token failed");
+      throw new Error("fetch access token failed");
+    } else {
+      setAccessToken(access_token);
+    }
+
+    const decodedAccesstoken = jsonwebtoken.decode(access_token) as AccessToken;
+
+    // TODO: hardcode for now
+    const format = "jwt_vc_json";
+    const type = "CourseCredential";
+
+    const attestations = { idTokens: { "https://self-issued.me": access_token } };
+
+    if (!publicKey || !privateKey) {
+      throw new Error("publicKey or privateKey is not found");
+    }
+    const signer = new Signer();
+    await signer.init(publicKey, privateKey);
+
+    const issueRequestIdToken = await signer.siop({
+      aud: decodedAccesstoken.aud,
+      contract: dataFromOpenidCredentialIssuer.credentials_supported[0].display.contract,
+      attestations,
+      // pin: options?.pin,
+    });
+    console.log("issueRequestIdToken", issueRequestIdToken);
+
+    const proof = {
+      proof_type: "jwt",
+      jwt: issueRequestIdToken,
+    };
+
+    const resp = await fetch(`${dataFromOpenidCredentialIssuer.credential_endpoint}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${access_token}`,
+      },
+      body: JSON.stringify({ format, type, proof }),
+    });
+
+    const { credential } = await resp.json();
+
+    const id = uuidv4();
+    const vc = credential;
+    const existingCredentialsString = localStorage.getItem("credentials");
+
+    let existingCredential;
+    if (existingCredentialsString) {
+      existingCredential = JSON.parse(existingCredentialsString);
+    } else {
+      existingCredential = [];
+    }
+
+    existingCredential.push({ id, vc });
+    localStorage.setItem("credentials", JSON.stringify(existingCredential));
+    setIssuedCredential(vc);
+  };
+
   useEffect(() => {
     // TODO: add pre auth flow
     const code = searchParams.get("code");
@@ -125,7 +246,14 @@ export default function Home() {
     setMode("Issue");
     setWallet("local");
     setIssuingCredential(cache.credential);
+
+    const existingCredentialOfferString = localStorage.getItem("credentialOffer");
+    if (!existingCredentialOfferString) {
+      return;
+    }
     setCode(code);
+
+    console.log("cache", cache);
     fetch(`${cache.token_endpoint}`, {
       method: "POST",
       headers: {
@@ -181,6 +309,9 @@ export default function Home() {
   return (
     <main>
       <div>
+        <h2>DID: {did}</h2>
+      </div>
+      <div>
         <h2>QRCode Reader</h2>
         <video ref={ref} />
       </div>
@@ -226,7 +357,7 @@ export default function Home() {
             <h3>Data from Openid Credential Issuer</h3>
             <p>{JSON.stringify(dataFromOpenidCredentialIssuer)}</p>
             <button
-              disabled={!authorizationUrlWithQuery}
+              disabled={!authorizationUrlWithQuery || !!preCode}
               onClick={() => {
                 router.push(authorizationUrlWithQuery);
               }}
@@ -245,6 +376,24 @@ export default function Home() {
           <div>
             <h3>Code from Authorization Endpoint</h3>
             <p>{code}</p>
+          </div>
+        )}
+        {preCode && (
+          <div>
+            <h3>preCode from Credential Offer Endpoint</h3>
+            <p>{preCode}</p>
+          </div>
+        )}
+        {preCode && (
+          <div>
+            <h3>Issue from Credential Offer Endpoint [pre-authorization flow]</h3>
+            <button
+              onClick={async () => {
+                await preAuthIssue();
+              }}
+            >
+              Issue
+            </button>
           </div>
         )}
         {accessToken && (
