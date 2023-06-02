@@ -4,7 +4,6 @@ import jsonwebtoken from "jsonwebtoken";
 import { useRouter, useSearchParams } from "next/navigation";
 import qs from "querystring";
 import { useEffect, useState } from "react";
-import QRCode from "react-qr-code";
 import { useZxing } from "react-zxing";
 import { v4 as uuidv4 } from "uuid";
 
@@ -193,6 +192,7 @@ export default function Home() {
     });
     console.log("issueRequestIdToken", issueRequestIdToken);
 
+    // MSの場合はid_token_hintを含めたSIOPが必要なのでproof.jwtとして投げている
     const proof = {
       proof_type: "jwt",
       jwt: issueRequestIdToken,
@@ -226,7 +226,6 @@ export default function Home() {
   };
 
   useEffect(() => {
-    // TODO: add pre auth flow
     const code = searchParams.get("code");
     const state = searchParams.get("state");
     if (!code || !state) {
@@ -268,7 +267,8 @@ export default function Home() {
         const format = "ldp_vc";
         const type = "CourseCredential";
 
-        // TODO: siop for ms
+        // TODO: hardcode for now
+        // mattrは単純なkeyを使った署名をjwtとして投げる
         const proof = {
           proof_type: "jwt",
           jwt: "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa3RjNU5QR3R2Mm9qUFpWOFlYUFA2NFAxVGpMTThBQjU5QnVoYkdqcDJCU2p0I3o2TWt0YzVOUEd0djJvalBaVjhZWFBQNjRQMVRqTE04QUI1OUJ1aGJHanAyQlNqdCJ9.eyJpc3MiOiJtb2JpbGV3YWxsZXQiLCJhdWQiOiJodHRwczovL2Jsb2NrYmFzZS1ncXR3bWYudmlpLm1hdHRyLmdsb2JhbCIsImlhdCI6MTY4MTk3MjMzMywianRpIjoiZTI5ZWFlODQtNjgxMS00YzgyLTg0NmItM2QyNjE4YWJhYTk2In0._pSg2-NE-nH47s6MOYpWHQA6AHpOczylfwq8Wui66w63nu3mmfs4P4ypSqgNnw9XpdLJWicuqWz3Pheds8KWCw",
