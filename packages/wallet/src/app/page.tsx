@@ -19,7 +19,6 @@ export default function Home() {
   const searchParams = useSearchParams();
   const [dataInQRCode, setDataInQRCode] = useState("");
   const [mode, setMode] = useState<"Issue" | "Verify">();
-  const [wallet, setWallet] = useState<"local" | "others">();
   const [dataFromOpenidCredentialIssuer, setDataFromOpenidCredentialIssuer] = useState<IssuerMetadata>();
   const [authorizationUrlWithQuery, setAuthorizationUrlWithQuery] = useState("");
   const [issuingCredential, setIssuingCredential] = useState<Credential>();
@@ -31,8 +30,6 @@ export default function Home() {
 
   const [dataFromPresentaionRequest, setDataFromPresentaionRequest] = useState<any>();
   const [availableCredential, setAvailableCredential] = useState();
-
-  const [relayQRCodeValue, setRelayQRCodeValue] = useState("");
 
   const [publicKey, setPublicKey] = useState<ionjs.JwkEs256k>();
   const [privateKey, setPrivateKey] = useState<ionjs.JwkEs256k>();
@@ -59,7 +56,7 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (!dataInQRCode || wallet !== "local") {
+    if (!dataInQRCode) {
       return;
     }
     const [scheme] = dataInQRCode.split("://");
@@ -97,7 +94,7 @@ export default function Home() {
           setDataFromPresentaionRequest(data);
         });
     }
-  }, [dataInQRCode, wallet]);
+  }, [dataInQRCode]);
 
   useEffect(() => {
     if (!dataFromOpenidCredentialIssuer) {
@@ -142,9 +139,6 @@ export default function Home() {
   }, [dataFromPresentaionRequest]);
 
   const preAuthIssue = async () => {
-    // setMode("Issue");
-    // setWallet("local");
-
     const existingCredentialOfferString = localStorage.getItem("credentialOffer");
     if (!existingCredentialOfferString) {
       throw new Error("existingCredentialOfferString is not found");
@@ -244,7 +238,7 @@ export default function Home() {
     }
     const cache = JSON.parse(item) as StoredCacheWithState;
     setMode("Issue");
-    setWallet("local");
+
     setIssuingCredential(cache.credential);
 
     const existingCredentialOfferString = localStorage.getItem("credentialOffer");
@@ -316,40 +310,10 @@ export default function Home() {
         <video ref={ref} />
       </div>
       <div>
-        <h2>Process Logger</h2>
-        {dataInQRCode && (
-          <div>
-            <h3>Data QR Code:</h3>
-            <p>{dataInQRCode}</p>
-            <h3>Process by:</h3>
-            <button
-              onClick={() => {
-                setWallet("local");
-              }}
-            >
-              Local
-            </button>
-            <button>MS</button>
-            <button
-              onClick={() => {
-                const value = dataInQRCode.replace("opid4vci", "openid-credential-offer");
-                setRelayQRCodeValue(value);
-              }}
-            >
-              Mattr
-            </button>
-          </div>
-        )}
         {mode && (
           <div>
             <h3>Mode:</h3>
             <p>{mode}</p>
-          </div>
-        )}
-        {relayQRCodeValue && (
-          <div>
-            <h3>Relay QRCode</h3>
-            <QRCode size={256} value={relayQRCodeValue} />
           </div>
         )}
         {dataFromOpenidCredentialIssuer && (
