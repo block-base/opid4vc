@@ -2,17 +2,17 @@ import { decode } from "jsonwebtoken";
 
 import { MSManifest } from "../types/ms";
 
-export const getCredentialSupported = async (credentialId: string) => {
-  const manifestUrl = `https://verifiedid.did.msidentity.com/v1.0/tenants/${process.env.MS_TENANT_ID}/verifiableCredentials/contracts/${credentialId}/manifest`;
+export const getIssuerMetadata = async () => {
+  const manifestUrl = `https://verifiedid.did.msidentity.com/v1.0/tenants/${process.env.MS_TENANT_ID}/verifiableCredentials/contracts/${process.env.CREDENTIAL_ID}/manifest`;
 
-  const resp = await fetch(manifestUrl, {
+  const data = await fetch(manifestUrl, {
     method: "GET",
   }).then((result) => result.json());
 
-  const manifest = decode(resp.token) as MSManifest;
+  const manifest = decode(data.token) as MSManifest;
 
   let credentialSubject = {};
-  manifest.input.attestations.idTokens[0].claims.map((claim: any) => {
+  manifest.input.attestations.idTokens[0].claims.map((claim) => {
     return (credentialSubject = {
       ...credentialSubject,
       [claim.claim]: "",
@@ -20,6 +20,7 @@ export const getCredentialSupported = async (credentialId: string) => {
   });
 
   const credential = {
+    "@context": ["https://www.w3.org/2018/credentials/v1"],
     type: ["VerifiableCredential", process.env.CREDENTIAL_TYPE],
     name: manifest.display.card.title,
     description: manifest.display.card.description,
@@ -29,11 +30,12 @@ export const getCredentialSupported = async (credentialId: string) => {
       contract: manifest.display.contract,
     },
     credentialSubject,
-    "@context": ["https://www.w3.org/2018/credentials/v1"],
   };
   // check env values for static values
-  const credentials_supported = [credential];
-  return { credentials_supported };
+  const issuerMetadata = {
+    credentials_supported: [credential],
+  };
+  return issuerMetadata;
 };
 
 export const getCredentialEndpoint = () => {
