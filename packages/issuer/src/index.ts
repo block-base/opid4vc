@@ -34,7 +34,6 @@ const credentialType = process.env.CREDENTIAL_TYPE || "";
 const credentialId = process.env.CREDENTIAL_ID || "";
 
 const authUrl = process.env.AUTH_URL || "";
-const tokenUrl = process.env.TOKEN_URL || "";
 const authClientId = process.env.AUTH_CLIENT_ID || "";
 const authClientSecret = process.env.AUTH_CLIENT_SECRET || "";
 
@@ -57,10 +56,7 @@ app.get("/qr", async (req, res) => {
     credentials: [credentialId],
   };
   if (credentialIssuanceFlow === "urn:ietf:params:oauth:grant-type:pre-authorized_code") {
-    // TODO: replace for ms integration
-    // 1. access token validation
-    // 2. create request url (use query for now)
-    const { request_uri } = req.query as any;
+    const { request_uri } = req.query;
     // this should be removed
     if (!request_uri) {
       throw new Error("access token invalid");
@@ -97,7 +93,7 @@ app.get("/.well-known/openid-credential-issuer", async (_, res) => {
   if (credentialIssuerType === "mattr") {
     data = await mattr.getIssuerMetadata();
   } else if (credentialIssuerType === "ms") {
-    data = await ms.getCredentialSupported(credentialId);
+    data = await ms.getIssuerMetadata();
   } else {
     throw new Error("not implemented");
   }

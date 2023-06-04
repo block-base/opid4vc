@@ -1,5 +1,5 @@
 {
-  "name": "@oid4vc/verifier",
+  "name": "@opid4vc/verifier",
   "version": "0.0.1",
   "main": "index.js",
   "scripts": {

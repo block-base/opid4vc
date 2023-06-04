@@ -69,7 +69,7 @@ export default function Home() {
       const credentialOffer = JSON.parse(parsedQuery[key]);
 
       const preAuthorizationCode =
-        credentialOffer.grants["urn:ietf:params:oauth:grant-type:pre-authorized_code"]["pre-authorized_code"];
+        credentialOffer.grants?.["urn:ietf:params:oauth:grant-type:pre-authorized_code"]?.["pre-authorized_code"];
       if (preAuthorizationCode) {
         setPreCode(preAuthorizationCode);
       }
@@ -303,7 +303,8 @@ export default function Home() {
   return (
     <main>
       <div>
-        <h2>DID: {did}</h2>
+        <h2>DID</h2>
+        <p>{did}</p>
       </div>
       <div>
         <h2>QRCode Reader</h2>
