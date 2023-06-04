@@ -23,9 +23,10 @@ export const getCredentialSupported = async (credentialId: string) => {
     type: ["VerifiableCredential", process.env.CREDENTIAL_TYPE],
     name: manifest.display.card.title,
     description: manifest.display.card.description,
-    credentialBranding: {
+    display: {
       backgroundColor: manifest.display.card.backgroundColor,
       watermarkImageUrl: manifest.display.card.logo.uri,
+      contract: manifest.display.contract,
     },
     credentialSubject,
     "@context": ["https://www.w3.org/2018/credentials/v1"],

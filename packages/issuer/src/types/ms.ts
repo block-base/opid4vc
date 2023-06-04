@@ -4,6 +4,7 @@ export interface MSCredentialRequest {
 
 export interface MSManifest {
   display: {
+    contract: string;
     card: {
       title: string;
       description: string;

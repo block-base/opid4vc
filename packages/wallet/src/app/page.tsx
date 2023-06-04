@@ -1,32 +1,37 @@
 "use client";
+import * as ionjs from "@decentralized-identity/ion-sdk/dist/lib/index";
+import jsonwebtoken from "jsonwebtoken";
 import { useRouter, useSearchParams } from "next/navigation";
 import qs from "querystring";
 import { useEffect, useState } from "react";
-import QRCode from "react-qr-code";
 import { useZxing } from "react-zxing";
 import { v4 as uuidv4 } from "uuid";
 
 import { StoredCacheWithState } from "@/types/cache";
+import { AccessToken } from "@/types/token";
 
 import { Credential, IssuerMetadata } from "../../../common/types/credential";
+import { Signer } from "../../lib/signer";
 
 export default function Home() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [dataInQRCode, setDataInQRCode] = useState("");
   const [mode, setMode] = useState<"Issue" | "Verify">();
-  const [wallet, setWallet] = useState<"local" | "others">();
   const [dataFromOpenidCredentialIssuer, setDataFromOpenidCredentialIssuer] = useState<IssuerMetadata>();
   const [authorizationUrlWithQuery, setAuthorizationUrlWithQuery] = useState("");
   const [issuingCredential, setIssuingCredential] = useState<Credential>();
   const [code, setCode] = useState("");
+  const [preCode, setPreCode] = useState("");
   const [accessToken, setAccessToken] = useState("");
   const [issuedCredential, setIssuedCredential] = useState<Credential>();
+  const [did, setDid] = useState("");
 
   const [dataFromPresentaionRequest, setDataFromPresentaionRequest] = useState<any>();
   const [availableCredential, setAvailableCredential] = useState();
 
-  const [relayQRCodeValue, setRelayQRCodeValue] = useState("");
+  const [publicKey, setPublicKey] = useState<ionjs.JwkEs256k>();
+  const [privateKey, setPrivateKey] = useState<ionjs.JwkEs256k>();
 
   const { ref } = useZxing({
     onResult(result) {
@@ -36,7 +41,21 @@ export default function Home() {
   });
 
   useEffect(() => {
-    if (!dataInQRCode || wallet !== "local") {
+    (async () => {
+      const signer = new Signer();
+      const [publicKey, privateKey] = await ionjs.IonKey.generateEs256kOperationKeyPair();
+      await signer.init(publicKey, privateKey);
+      setPublicKey(publicKey);
+      setPrivateKey(privateKey);
+      if (!signer.did) {
+        throw new Error("did is not found");
+      }
+      setDid(signer.did);
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!dataInQRCode) {
       return;
     }
     const [scheme] = dataInQRCode.split("://");
@@ -48,6 +67,14 @@ export default function Home() {
       }
       setMode("Issue");
       const credentialOffer = JSON.parse(parsedQuery[key]);
+
+      const preAuthorizationCode =
+        credentialOffer.grants["urn:ietf:params:oauth:grant-type:pre-authorized_code"]["pre-authorized_code"];
+      if (preAuthorizationCode) {
+        setPreCode(preAuthorizationCode);
+      }
+
+      localStorage.setItem("credentialOffer", JSON.stringify(credentialOffer));
       fetch(`${credentialOffer.credential_issuer}/.well-known/openid-credential-issuer`)
         .then((res) => res.json())
         .then((data) => {
@@ -66,7 +93,7 @@ export default function Home() {
           setDataFromPresentaionRequest(data);
         });
     }
-  }, [dataInQRCode, wallet]);
+  }, [dataInQRCode]);
 
   useEffect(() => {
     if (!dataFromOpenidCredentialIssuer) {
@@ -110,8 +137,95 @@ export default function Home() {
     setAvailableCredential(availableCredential);
   }, [dataFromPresentaionRequest]);
 
+  const preAuthIssue = async () => {
+    const existingCredentialOfferString = localStorage.getItem("credentialOffer");
+    if (!existingCredentialOfferString) {
+      throw new Error("existingCredentialOfferString is not found");
+    }
+
+    const credentialOffer = JSON.parse(existingCredentialOfferString);
+    const preAuthorizationCode = preCode;
+    if (!preAuthorizationCode) {
+      throw new Error("preAuthorizationCode is not found");
+    }
+    console.log("credentialOffer", credentialOffer);
+    if (!dataFromOpenidCredentialIssuer) {
+      throw new Error("dataFromOpenidCredentialIssuer is not found");
+    }
+    const res = await fetch(`${dataFromOpenidCredentialIssuer?.token_endpoint}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        grant_type: "urn:ietf:params:oauth:grant-type:pre-authorized_code",
+        "pre-authorized_code": preCode,
+      }),
+    });
+    const { access_token } = await res.json();
+    if (!access_token) {
+      setAccessToken("fetch access token failed");
+      throw new Error("fetch access token failed");
+    } else {
+      setAccessToken(access_token);
+    }
+
+    const decodedAccesstoken = jsonwebtoken.decode(access_token) as AccessToken;
+
+    // TODO: hardcode for now
+    const format = "jwt_vc_json";
+    const type = "CourseCredential";
+
+    const attestations = { idTokens: { "https://self-issued.me": access_token } };
+
+    if (!publicKey || !privateKey) {
+      throw new Error("publicKey or privateKey is not found");
+    }
+    const signer = new Signer();
+    await signer.init(publicKey, privateKey);
+
+    const issueRequestIdToken = await signer.siop({
+      aud: decodedAccesstoken.aud,
+      contract: dataFromOpenidCredentialIssuer.credentials_supported[0].display.contract,
+      attestations,
+      // pin: options?.pin,
+    });
+    console.log("issueRequestIdToken", issueRequestIdToken);
+
+    // MSの場合はid_token_hintを含めたSIOPが必要なのでproof.jwtとして投げている
+    const proof = {
+      proof_type: "jwt",
+      jwt: issueRequestIdToken,
+    };
+
+    const resp = await fetch(`${dataFromOpenidCredentialIssuer.credential_endpoint}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${access_token}`,
+      },
+      body: JSON.stringify({ format, type, proof }),
+    });
+
+    const { credential } = await resp.json();
+
+    const id = uuidv4();
+    const vc = credential;
+    const existingCredentialsString = localStorage.getItem("credentials");
+
+    let existingCredential;
+    if (existingCredentialsString) {
+      existingCredential = JSON.parse(existingCredentialsString);
+    } else {
+      existingCredential = [];
+    }
+
+    existingCredential.push({ id, vc });
+    localStorage.setItem("credentials", JSON.stringify(existingCredential));
+    setIssuedCredential(vc);
+  };
+
   useEffect(() => {
-    // TODO: add pre auth flow
     const code = searchParams.get("code");
     const state = searchParams.get("state");
     if (!code || !state) {
@@ -123,9 +237,16 @@ export default function Home() {
     }
     const cache = JSON.parse(item) as StoredCacheWithState;
     setMode("Issue");
-    setWallet("local");
+
     setIssuingCredential(cache.credential);
+
+    const existingCredentialOfferString = localStorage.getItem("credentialOffer");
+    if (!existingCredentialOfferString) {
+      return;
+    }
     setCode(code);
+
+    console.log("cache", cache);
     fetch(`${cache.token_endpoint}`, {
       method: "POST",
       headers: {
@@ -146,7 +267,8 @@ export default function Home() {
         const format = "ldp_vc";
         const type = "CourseCredential";
 
-        // TODO: siop for ms
+        // TODO: hardcode for now
+        // mattrは単純なkeyを使った署名をjwtとして投げる
         const proof = {
           proof_type: "jwt",
           jwt: "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa3RjNU5QR3R2Mm9qUFpWOFlYUFA2NFAxVGpMTThBQjU5QnVoYkdqcDJCU2p0I3o2TWt0YzVOUEd0djJvalBaVjhZWFBQNjRQMVRqTE04QUI1OUJ1aGJHanAyQlNqdCJ9.eyJpc3MiOiJtb2JpbGV3YWxsZXQiLCJhdWQiOiJodHRwczovL2Jsb2NrYmFzZS1ncXR3bWYudmlpLm1hdHRyLmdsb2JhbCIsImlhdCI6MTY4MTk3MjMzMywianRpIjoiZTI5ZWFlODQtNjgxMS00YzgyLTg0NmItM2QyNjE4YWJhYTk2In0._pSg2-NE-nH47s6MOYpWHQA6AHpOczylfwq8Wui66w63nu3mmfs4P4ypSqgNnw9XpdLJWicuqWz3Pheds8KWCw",
@@ -181,44 +303,17 @@ export default function Home() {
   return (
     <main>
       <div>
+        <h2>DID: {did}</h2>
+      </div>
+      <div>
         <h2>QRCode Reader</h2>
         <video ref={ref} />
       </div>
       <div>
-        <h2>Process Logger</h2>
-        {dataInQRCode && (
-          <div>
-            <h3>Data QR Code:</h3>
-            <p>{dataInQRCode}</p>
-            <h3>Process by:</h3>
-            <button
-              onClick={() => {
-                setWallet("local");
-              }}
-            >
-              Local
-            </button>
-            <button>MS</button>
-            <button
-              onClick={() => {
-                const value = dataInQRCode.replace("opid4vci", "openid-credential-offer");
-                setRelayQRCodeValue(value);
-              }}
-            >
-              Mattr
-            </button>
-          </div>
-        )}
         {mode && (
           <div>
             <h3>Mode:</h3>
             <p>{mode}</p>
-          </div>
-        )}
-        {relayQRCodeValue && (
-          <div>
-            <h3>Relay QRCode</h3>
-            <QRCode size={256} value={relayQRCodeValue} />
           </div>
         )}
         {dataFromOpenidCredentialIssuer && (
@@ -226,7 +321,7 @@ export default function Home() {
             <h3>Data from Openid Credential Issuer</h3>
             <p>{JSON.stringify(dataFromOpenidCredentialIssuer)}</p>
             <button
-              disabled={!authorizationUrlWithQuery}
+              disabled={!authorizationUrlWithQuery || !!preCode}
               onClick={() => {
                 router.push(authorizationUrlWithQuery);
               }}
@@ -245,6 +340,24 @@ export default function Home() {
           <div>
             <h3>Code from Authorization Endpoint</h3>
             <p>{code}</p>
+          </div>
+        )}
+        {preCode && (
+          <div>
+            <h3>preCode from Credential Offer Endpoint</h3>
+            <p>{preCode}</p>
+          </div>
+        )}
+        {preCode && (
+          <div>
+            <h3>Issue from Credential Offer Endpoint [pre-authorization flow]</h3>
+            <button
+              onClick={async () => {
+                await preAuthIssue();
+              }}
+            >
+              Issue
+            </button>
           </div>
         )}
         {accessToken && (

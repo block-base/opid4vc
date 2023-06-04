@@ -9,6 +9,9 @@ export interface Credential {
   type?: string[];
   format?: string;
   credentialSubject?: CredentialSubject;
+  display: {
+    contract: string;
+  };
 }
 
 export interface CredentialOffer {
