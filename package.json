@@ -8,14 +8,12 @@
   ],
   "scripts": {
     "prepare": "husky install",
-    "build": "run-s build:contracts build:app",
-    "build:app": "yarn workspace @ninja-wallet/app build",
-    "build:contracts": "yarn workspace @ninja-wallet/contracts build",
-    "test": "run-p test:*",
-    "test:contracts": "yarn workspace @ninja-wallet/contracts test",
+    "build": "run-p build:*",
+    "build:wallet": "yarn workspace @opid4vc/wallet build",
     "lint": "run-p lint:*",
-    "lint:app": "yarn workspace @ninja-wallet/app lint",
-    "lint:contracts": "yarn workspace @ninja-wallet/contracts lint"
+    "lint:issuer": "yarn workspace @opid4vc/issuer lint",
+    "lint:verifier": "yarn workspace @opid4vc/verifier lint",
+    "lint:wallet": "yarn workspace @opid4vc/wallet lint"
   },
   "devDependencies": {
     "@commitlint/cli": "^17.2.0",
