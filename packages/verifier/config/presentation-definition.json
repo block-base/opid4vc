@@ -2,7 +2,12 @@
   "id": "uuid",
   "input_descriptors": [
     {
-      "id": "CourseCredential"
+      "id": "DIDCMemberCredential",
+      "format": {
+        "jwt_vp_json": {
+          "proof_type": ["ES256K"]
+        }
+      }
     }
   ]
 }

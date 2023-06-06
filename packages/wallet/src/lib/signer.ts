@@ -30,7 +30,37 @@ export interface SiopOptions {
   pin?: string;
 }
 
+export interface SiopV2Options {
+  aud: string;
+  nonce?: string;
+  state?: string;
+  nbf?: number;
+  _vp_token?: {
+    presentation_submission?: {
+      id?: string;
+      definition_id?: string;
+      descriptor_map?: {
+        path?: string;
+        id?: string;
+        format?: string;
+        path_nested?: {
+          id?: string;
+          format?: string;
+          path?: string;
+        };
+      }[];
+    };
+  };
+}
+
+export interface VPOptions {
+  vcs: string[] | any[];
+  verifierDID: string;
+  nonce?: string;
+}
+
 const DID_ION_KEY_ID = "signingKey";
+const SIOP_VALIDITY_IN_MINUTES = 30;
 
 export class Signer {
   did: string | undefined = undefined;
@@ -78,7 +108,7 @@ export class Signer {
       },
       {
         iat: moment().unix(),
-        exp: moment().add(30, "minutes").unix(),
+        exp: moment().add(SIOP_VALIDITY_IN_MINUTES, "minutes").unix(),
         did: this.did,
         jti: uuidv4().toUpperCase(),
         sub: await calculateJwkThumbprint(this.publicKeyJwk as JWK),
@@ -93,5 +123,61 @@ export class Signer {
         ...options,
       }
     );
+  };
+
+  siopV2 = async (options: SiopV2Options): Promise<string> => {
+    if (!this.privateKeyJwk) throw new Error("privateJwk is not initialized");
+    if (!this.did) throw new Error("did is not initialized");
+    const signer = ionjs.LocalSigner.create(this.privateKeyJwk);
+    return await signer.sign(
+      {
+        typ: "JWT",
+        alg: "ES256K",
+        kid: `${this.did}#${DID_ION_KEY_ID}`,
+      },
+      {
+        iat: moment().unix(),
+        exp: moment().add(SIOP_VALIDITY_IN_MINUTES, "minutes").unix(),
+        sub: this.did,
+        iss: "https://self-issued.me/v2/openid-vc",
+        ...options,
+      }
+    );
+  };
+
+  createVP = async (format: "ldp_vp" | "jwt_vp_json", options: VPOptions): Promise<string | any> => {
+    if (!this.privateKeyJwk) throw new Error("privateJwk is not initialized");
+    if (!this.did) throw new Error("did is not initialized");
+    const signer = ionjs.LocalSigner.create(this.privateKeyJwk);
+
+    if (format === "jwt_vp_json") {
+      return await signer.sign(
+        {
+          typ: "JWT",
+          alg: "ES256K",
+          kid: `${this.did}#${DID_ION_KEY_ID}`,
+        },
+        {
+          iat: moment().unix(),
+          exp: moment().add(SIOP_VALIDITY_IN_MINUTES, "minutes").unix(),
+          nbf: moment().unix(),
+          jti: uuidv4().toUpperCase(),
+          vp: {
+            "@context": ["https://www.w3.org/2018/credentials/v1"],
+            type: ["VerifiablePresentation"],
+            verifiableCredential: options.vcs,
+          },
+          iss: this.did,
+          aud: options.verifierDID,
+          nonce: options.nonce,
+        }
+      );
+    }
+    if (format === "ldp_vp") {
+      // TODO: sign
+      // create json-ld verifiable presentation
+      const vp = {};
+      return vp;
+    }
   };
 }
