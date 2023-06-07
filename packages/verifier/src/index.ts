@@ -1,10 +1,13 @@
 import cors from "cors";
 import dotenv from "dotenv";
 import express from "express";
+import { decode } from "jsonwebtoken";
 import NodeCache from "node-cache";
 import QRCode from "qrcode";
 
 import presentation_definition from "../config/presentation-definition.json";
+import { StoredCacheWithState } from "../types/cache";
+import { Token } from "../types/token";
 
 const cacheStorage = new NodeCache({ stdTTL: 600 });
 dotenv.config();
@@ -34,28 +37,40 @@ app.get("/qr", async (req, res) => {
 });
 
 app.get("/presentationRequest", async (req, res) => {
-  // TODO: state & nonce
+  // TODO: dynamic state and nonce
+  const state = "defaultState";
+  const nonce = "defaultNonce";
+
+  cacheStorage.set(state, { nonce });
 
   const redirect_uri = `${appUrl}/present`;
   const presentationRequest = {
-    response_types: "vp_token",
+    response_types: "vp_token id_token",
     response_mode: "direct_post",
     scope: "openid",
     redirect_uri,
     presentation_definition,
+    state,
+    nonce,
   };
   return res.json(presentationRequest);
 });
 
 app.post("/present", async (req, res) => {
-  const { presentation_submission, vp_token } = req.body;
-  // TODO: state & nonce
+  const { presentation_submission, vp_token, state, id_token } = req.body;
+  console.log(req.body);
+
+  const cache = cacheStorage.get<StoredCacheWithState>(state);
+  const decodedIdToken = decode(id_token) as Token;
+  if (decodedIdToken.nonce !== cache?.nonce) {
+    throw new Error("nonce is invalid");
+  }
 
   // TODO: verify vp_token
   console.log("vp_token", vp_token);
   // TODO: return value and integrate frontend
   console.log("presentation_submission", presentation_submission);
-  return res.send("ok");
+  return res.json({ verify: "ok" });
 });
 
 const port = process.env.APP_PORT || 8001;

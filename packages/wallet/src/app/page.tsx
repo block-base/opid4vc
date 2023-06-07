@@ -1,6 +1,6 @@
 "use client";
 import * as ionjs from "@decentralized-identity/ion-sdk/dist/lib/index";
-import jsonwebtoken from "jsonwebtoken";
+import jsonwebtoken, { decode } from "jsonwebtoken";
 import { useRouter, useSearchParams } from "next/navigation";
 import qs from "querystring";
 import { useEffect, useState } from "react";
@@ -9,9 +9,10 @@ import { v4 as uuidv4 } from "uuid";
 
 import { StoredCacheWithState } from "@/types/cache";
 import { AccessToken } from "@/types/token";
+import { JwtCredential, storedCredential } from "@/types/vc";
 
 import { Credential, IssuerMetadata } from "../../../common/types/credential";
-import { Signer } from "../../lib/signer";
+import { Signer } from "../lib/signer";
 
 export default function Home() {
   const router = useRouter();
@@ -26,9 +27,10 @@ export default function Home() {
   const [accessToken, setAccessToken] = useState("");
   const [issuedCredential, setIssuedCredential] = useState<Credential>();
   const [did, setDid] = useState("");
+  const [verifyStatus, setVerifyStatus] = useState<"verified" | "failed" | "null">("null");
 
   const [dataFromPresentaionRequest, setDataFromPresentaionRequest] = useState<any>();
-  const [availableCredential, setAvailableCredential] = useState();
+  const [availableCredential, setAvailableCredential] = useState<storedCredential>();
 
   const [publicKey, setPublicKey] = useState<ionjs.JwkEs256k>();
   const [privateKey, setPrivateKey] = useState<ionjs.JwkEs256k>();
@@ -131,10 +133,15 @@ export default function Home() {
       return;
     }
     const existingCredentials = JSON.parse(existingCredentialsString) as any[];
-    const availableCredential = existingCredentials.find(({ vc: { type } }) =>
-      type?.includes(dataFromPresentaionRequest.presentation_definition.input_descriptors[0].id)
-    );
-    setAvailableCredential(availableCredential);
+    const availableCredentials = existingCredentials.filter((storedVCData) => {
+      if (typeof storedVCData.vc === "string") {
+        const decoded = decode(storedVCData.vc) as JwtCredential;
+        return decoded.vc.type.includes(dataFromPresentaionRequest.presentation_definition.input_descriptors[0].id);
+      }
+      return storedVCData.vc.type?.includes(dataFromPresentaionRequest.presentation_definition.input_descriptors[0].id);
+    });
+    // TODO: 一旦最初のcredentialを使う
+    setAvailableCredential(availableCredentials[0]);
   }, [dataFromPresentaionRequest]);
 
   const preAuthIssue = async () => {
@@ -384,24 +391,109 @@ export default function Home() {
             <h3>Available Credential</h3>
             <p>{JSON.stringify(availableCredential)}</p>
             <button
-              onClick={() => {
+              onClick={async () => {
                 // TODO: SIOPv2
-                const vp_token = availableCredential;
-                // TODO: presentaion submission
-                const presentation_submission = {};
-                fetch(dataFromPresentaionRequest.redirect_uri, {
+                console.log("availableCredential", availableCredential);
+                const signer = new Signer();
+                const [publicKey, privateKey] = await ionjs.IonKey.generateEs256kOperationKeyPair();
+                await signer.init(publicKey, privateKey);
+
+                let vp_token;
+                let presentation_submission;
+                let path_nested = {};
+
+                if (typeof availableCredential.vc === "string") {
+                  path_nested = {
+                    format: "jwt_vc_json",
+                    path: "$.verifiableCredential[0]",
+                  };
+                } else {
+                  path_nested = {
+                    format: "ldp_vc",
+                    path: "$.verifiableCredential[0]",
+                  };
+                }
+
+                if (
+                  Object.prototype.hasOwnProperty.call(
+                    dataFromPresentaionRequest.presentation_definition.input_descriptors[0].format,
+                    "ldp_vc"
+                  )
+                ) {
+                  vp_token = await signer.createVP("ldp_vp", {
+                    vcs: [availableCredential.vc],
+                    verifierDID: dataFromPresentaionRequest.client_id,
+                    nonce: dataFromPresentaionRequest.nonce,
+                  });
+                  presentation_submission = {
+                    id: "Presentation example 1",
+                    definition_id: "Example with selective disclosure",
+                    descriptor_map: [
+                      {
+                        id: "",
+                        format: "ldp_vc",
+                        path: "$",
+                        path_nested,
+                      },
+                    ],
+                  };
+                }
+
+                if (
+                  Object.prototype.hasOwnProperty.call(
+                    dataFromPresentaionRequest.presentation_definition.input_descriptors[0].format,
+                    "jwt_vp_json"
+                  )
+                ) {
+                  vp_token = await signer.createVP("jwt_vp_json", {
+                    vcs: [availableCredential.vc],
+                    verifierDID: dataFromPresentaionRequest.client_id,
+                    nonce: dataFromPresentaionRequest.nonce,
+                  });
+                  presentation_submission = {
+                    id: "Presentation example 1",
+                    definition_id: "Example with selective disclosure",
+                    descriptor_map: [
+                      {
+                        id: "",
+                        format: "ldp_vc",
+                        path: "$",
+                        path_nested,
+                      },
+                    ],
+                  };
+                }
+
+                let id_token;
+                if (dataFromPresentaionRequest.response_types === "vp_token id_token") {
+                  id_token = await signer.siop({
+                    aud: dataFromPresentaionRequest.client_id,
+                    nonce: dataFromPresentaionRequest.nonce,
+                  });
+                }
+
+                const state = dataFromPresentaionRequest.state;
+
+                const data = await fetch(dataFromPresentaionRequest.redirect_uri, {
                   method: "POST",
                   headers: {
                     "Content-Type": "application/json",
                   },
-                  body: JSON.stringify({ vp_token, presentation_submission }),
+                  body: JSON.stringify({ vp_token, presentation_submission, id_token, state }),
                 });
+                const { verify } = await data.json();
+                console.log("verify", verify);
+                setVerifyStatus(verify === "ok" ? "verified" : "failed");
               }}
             >
               Present
             </button>
           </div>
         )}
+        <div>
+          <h3>Verify Status</h3>
+          <p>{verifyStatus}</p>
+        </div>
       </div>
       <div>
         <h2>Credential Repository Logger</h2>
