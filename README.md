@@ -1,6 +1,6 @@
-# opid4vc
+# oid4vc
 
-This is OPID4VC wrapper
+This is OID4VC wrapper
 
 ## Setting
 

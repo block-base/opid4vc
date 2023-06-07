@@ -1,5 +1,5 @@
 {
-  "name": "opid4vc",
+  "name": "oid4vc",
   "version": "0.0.1",
   "license": "NOLICENSE",
   "private": true,
@@ -9,11 +9,11 @@
   "scripts": {
     "prepare": "husky install",
     "build": "run-p build:*",
-    "build:wallet": "yarn workspace @opid4vc/wallet build",
+    "build:wallet": "yarn workspace @oid4vc/wallet build",
     "lint": "run-p lint:*",
-    "lint:issuer": "yarn workspace @opid4vc/issuer lint",
-    "lint:verifier": "yarn workspace @opid4vc/verifier lint",
-    "lint:wallet": "yarn workspace @opid4vc/wallet lint"
+    "lint:issuer": "yarn workspace @oid4vc/issuer lint",
+    "lint:verifier": "yarn workspace @oid4vc/verifier lint",
+    "lint:wallet": "yarn workspace @oid4vc/wallet lint"
   },
   "devDependencies": {
     "@commitlint/cli": "^17.2.0",

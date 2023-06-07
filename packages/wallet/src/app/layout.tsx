@@ -5,8 +5,8 @@ import { Inter } from "next/font/google";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata = {
-  title: "OPID4VC Wallet Demo",
-  description: "OPID4VC Wallet Demo",
+  title: "OID4VC Wallet Demo",
+  description: "OID4VC Wallet Demo",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
