@@ -1,5 +1,5 @@
 {
-  "name": "@opid4vc/issuer",
+  "name": "@oid4vc/issuer",
   "version": "0.0.1",
   "main": "index.js",
   "scripts": {

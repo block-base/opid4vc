@@ -62,8 +62,8 @@ export default function Home() {
     }
     const [scheme] = dataInQRCode.split("://");
     const parsedQuery = qs.parse(dataInQRCode);
-    if (scheme === "opid4vci") {
-      const key = "opid4vci://?credential_offer";
+    if (scheme === "oid4vci") {
+      const key = "oid4vci://?credential_offer";
       if (typeof parsedQuery[key] !== "string") {
         return;
       }
