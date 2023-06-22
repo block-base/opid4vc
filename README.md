@@ -50,7 +50,7 @@ $ cd packages/verifier && yarn dev
 
 2. 新規のタブを開き、Issuer の QR 表示エンドポイントにアクセスします.
    (dev の場合は http://localhost:8000/qr)
-   (pre-authorization flow を MS のテナントで実行する場合は requestUri を追加してください http://localhost:8000/qr?requestUri=<requestUri>)
+   (pre-authorization flow を MS のテナントで実行する場合は request_uri を追加してください http://localhost:8000/qr?request_uri=<requestUri>)
 
 3. 表示されている QR を Wallet ページのカメラから読み取ります。読み取ると Issuer Metadata が表示され Authorization から認証をします。
 
